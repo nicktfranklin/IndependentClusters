@@ -138,3 +138,24 @@ fabric.properties
 ### IPythonNotebook template
 # Temporary data
 .ipynb_checkpoints/
+.idea/.name
+.idea/IndependentClustering_Demo.iml
+.idea/encodings.xml
+.idea/misc.xml
+.idea/modules.xml
+
+Agents.pyc
+GridWorld.pyc
+IndependentClustering_Demo/
+__init__.py
+__init__.pyc
+cython_library/Hypotheses.c
+cython_library/Hypotheses.so
+cython_library/__init__.py
+cython_library/__init__.pyc
+cython_library/core.c
+cython_library/core.so
+cython_library/mapping_likelihood.c
+cython_library/mapping_likelihood.so
+setup.py
+shared_code.pyc
