@@ -157,5 +157,4 @@ cython_library/core.c
 cython_library/core.so
 cython_library/mapping_likelihood.c
 cython_library/mapping_likelihood.so
-setup.py
 shared_code.pyc

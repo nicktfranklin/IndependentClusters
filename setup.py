@@ -10,7 +10,11 @@ from Cython.Build import cythonize
 import numpy as np
 
 setup(
-    packages=["cython_library"],
+    packages=["cython_library","numpy"],
     include_dirs=[np.get_include()],
     ext_modules=cythonize("**/*.pyx"),
+    # install_requires=[
+    #
+    #     "pandas"
+    # ]
 )

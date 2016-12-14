@@ -1,10 +1,10 @@
 import numpy as np
 import pandas as pd
 from shared_code import sample_cmf, softmax_to_pdf, enumerate_assignments
-from GridWorld import Task
-from RewardModel.cython_library import policy_iteration, policy_evaluation#, negative_log_likelihood
+from GridWorld import Task, get_goal_guess_sequence
+from cython_library import policy_iteration, policy_evaluation#, negative_log_likelihood
 from cython_library import RewardHypothesis, MappingHypothesis
-from RewardModel.GridWorld import get_goal_guess_sequence
+# from RewardModel.GridWorld import
 # import matplotlib.pyplot as plt
 # from scipy.optimize import minimize
 

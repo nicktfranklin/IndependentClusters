@@ -4,8 +4,8 @@ import numpy as np
 cimport numpy as np
 cimport cython
 
-from RewardModel.cython_library import policy_iteration, policy_evaluation
-from RewardModel.cython_library import get_prior_log_probability
+from core import policy_iteration, policy_evaluation
+from core import get_prior_log_probability
 
 DTYPE = np.float
 ctypedef np.float_t DTYPE_t
