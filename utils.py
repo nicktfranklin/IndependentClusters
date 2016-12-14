@@ -72,7 +72,7 @@ def randomize_order(context_balance, hazard_rates):
         context_order.append(current_context)
 
         # determine if there is to be a context switch
-        if (np.random.rand() < hazard_rates[n_repeats]) | (context_presentations[current_context] < 1):
+        if (np.random.rand() <= hazard_rates[n_repeats]) | (context_presentations[current_context] < 1):
 
             # construct a list of available contexts to select
             _available_ctx = range(n_ctx)
