@@ -19,7 +19,7 @@ This library run on Python 2.7 and unlike most python code, requries
  http://cython.readthedocs.io/en/latest/src/quickstart/install.html)  
  
  If you have already installed python 2.7, pip and gcc on on your system
- , you can install To install cython and the other dependencies with 
+ , you can install cython and the other dependencies with 
  pip (if you don't already have them), run:  
  ```pip install -r requirements.txt ```
 
