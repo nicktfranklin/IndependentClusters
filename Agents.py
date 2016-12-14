@@ -704,48 +704,6 @@ class TaskSetAgent(FlatAgentQValues):
         return -ll  # returns negative log likelihood
 
 
-class RestrictedTaskSetAgent(TaskSetAgent):
-
-    def __init__(self, task, inverse_temperature=10.0, alpha=1.0,  discount_rate=0.8, iteration_criterion=0.01, mapping_prior=0.01):
-
-        assert type(task) is Task
-        super(FullInformationAgent, self).__init__(task)
-
-        self.inverse_temperature = inverse_temperature
-        self.gamma = discount_rate
-        self.iteration_criterion = iteration_criterion
-        self.current_trial = 0
-        self.n_abstract_actions = self.task.n_abstract_actions
-        self.n_primitive_actions = self.task.n_primitive_actions
-
-        # get the list of enumerated set assignments!
-        # set_assignments = enumerate_assignments(self.task.n_ctx)
-        set_assignments = [
-            np.array([0, 0, 0, 0], dtype=np.int32),
-            np.array([0, 0, 1, 2], dtype=np.int32),
-            np.array([0, 0, 1, 1], dtype=np.int32),
-            np.array([0, 1, 2, 2], dtype=np.int32),
-            np.array([0, 1, 2, 3], dtype=np.int32),
-            np.array([0, 1, 0, 2], dtype=np.int32)
-        ]
-
-        # create task sets, each containing a reward and mapping hypothesis with the same assignement
-        self.task_sets = []
-        for assignment in set_assignments:
-
-            self.task_sets.append({
-                'Reward Hypothesis': RewardHypothesis(
-                    self.task.n_states, inverse_temperature, discount_rate, iteration_criterion,
-                    assignment, alpha
-                ),
-                'Mapping Hypothesis': MappingHypothesis(
-                    self.task.n_primitive_actions, self.task.n_abstract_actions, assignment, alpha, mapping_prior
-                ),
-            })
-
-        self.belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
-
-
 class IndependentClusterAgent(FlatAgentQValues):
 
     def __init__(self, task, inverse_temperature=10.0, alpha=1.0, discount_rate=0.8, iteration_criterion=0.01,
@@ -1188,6 +1146,7 @@ class MappingGeneralizingAgent(IndependentClusterAgent):
                 goal_pmf /= np.sum(goal_pmf)
 
         return -ll  # returns negative log likelihood
+
 
 class FlatAgentControlModel(IndependentClusterAgent):
 

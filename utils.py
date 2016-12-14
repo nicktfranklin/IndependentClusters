@@ -1,6 +1,6 @@
 import numpy as np
 import copy
-
+from GridWorld import Task
 
 def sample_cmf(cmf):
     return int(np.sum(np.random.rand() > cmf))
@@ -91,3 +91,27 @@ def randomize_order(context_balance, hazard_rates):
         context_presentations[current_context] -= 1
 
     return context_order
+
+
+def make_task(context_balance, context_goals, context_maps, hazard_rates, start_locations, grid_world_size):
+    list_context = list()
+    list_start_locations = list()
+    list_goals = list()
+    list_maps = list()
+    for ctx, n_reps in enumerate(context_balance):
+        list_context += [ctx] * n_reps
+        list_start_locations += [start_locations[np.random.randint(4)] for _ in range(n_reps)]
+        list_goals += [context_goals[ctx] for _ in range(n_reps)]
+        list_maps += [context_maps[ctx] for _ in range(n_reps)]
+
+    order = randomize_order(context_balance, hazard_rates)
+
+    list_start_locations = [list_start_locations[idx] for idx in order]
+    list_context = [list_context[idx] for idx in order]
+    list_goals = [list_goals[idx] for idx in order]
+    list_maps = [list_maps[idx] for idx in order]
+    list_walls = [[]] * len(order)
+
+    args = [list_start_locations, list_goals, list_context, list_maps]
+    kwargs = dict(list_walls=list_walls, grid_world_size=grid_world_size)
+    return Task(*args, **kwargs)
