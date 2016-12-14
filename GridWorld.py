@@ -1,3 +1,5 @@
+import copy
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -346,74 +348,6 @@ class Task(object):
         return s, action, aa, r, sp
 
 
-def _prep_sub_data(subject_data, keyboard_action_code, grid_world_size=(3, 3), n_abstract_actions = 4):
-
-    assert type(subject_data) is pd.DataFrame
-
-    # count the number of trials
-    n_trials = int(subject_data.TrialNumber.max() + 1)
-
-    #
-    primitive_actions = keyboard_action_code.keys()
-
-    # create a list of:
-    list_walls = []
-    list_start_location = []
-    list_end_location = []
-    list_context = []
-    list_action_map = []
-
-    for ii in range(n_trials):
-        trial_data = subject_data[subject_data.TrialNumber == ii]
-
-        # convert the action map to a function of action numbers
-        action_map = trial_data[u'action_map'][trial_data.index[0]]
-        action_map = {keyboard_action_code[key]: value for key, value in action_map.iteritems()}
-
-        list_walls.append(trial_data[u'walls'][trial_data.index[0]])
-        list_start_location.append(tuple(trial_data[u'Start Location'][trial_data.index[0]]))
-        list_end_location.append(tuple(trial_data[u'End Location'][trial_data.index[-1]]))
-        list_context.append(trial_data[u'context'][trial_data.index[0]] - 1)
-        list_action_map.append(action_map)
-
-    kwargs = {
-        'grid_world_size': grid_world_size,
-        'n_abstract_actions': n_abstract_actions,
-        'primitive_actions': primitive_actions,
-        'list_walls': list_walls,
-        'list_start_location': list_start_location,
-        'list_end_location': list_end_location,
-        'list_context': list_context,
-        'list_action_map': list_action_map
-    }
-    return kwargs
-
-
-def make_task_from_subject(subject_data, grid_world_size=(3, 3), n_abstract_actions=4,
-                           primitive_actions=(72, 74, 75, 76, 65, 83, 68, 70)):
-
-    # clean the data set (remove non-experiment trials)
-    subject_data = subject_data[subject_data.Phase == 'Experiment'].copy()
-
-    # create a key-code between keyboard presses and action numbers
-    keyboard_action_code = {unicode(keypress): a for a, keypress in enumerate(primitive_actions)}
-
-    kwargs = _prep_sub_data(subject_data, keyboard_action_code, grid_world_size=grid_world_size,
-                            n_abstract_actions=n_abstract_actions)
-
-    return Task(**kwargs)
-
-
-def make_task_from_generative(subject_data, grid_world_size=(3, 3), n_abstract_actions=4,
-                              primitive_actions=(0, 1, 2, 3, 4, 5, 6, 7)):
-
-    keyboard_action_code = {ii: ii for ii in primitive_actions}
-
-    kwargs = _prep_sub_data(subject_data, keyboard_action_code, grid_world_size=grid_world_size,
-                            n_abstract_actions=n_abstract_actions)
-    return Task(**kwargs)
-
-
 def get_goal_guess_sequence(data_frame, goal_key=None):
 
         if goal_key is None:
@@ -439,112 +373,70 @@ def get_goal_guess_sequence(data_frame, goal_key=None):
         return all_guess_sequence
 
 
-class SubjectData(object):
-    """ this is a data structure that holds all of the subjects trial by trial data, used for fitting etc.
-    """
+def randomize_order(context_balance, hazard_rates):
+    context_order = []
+    context_presentations = copy.copy(context_balance)
 
-    def __init__(self, subject_data, grid_world_size=(3, 3), n_abstract_actions=4,
-                 primitive_actions=(72, 74, 75, 76, 65, 83, 68, 70)):
+    n_ctx = len(context_presentations)
+    n_trials = 0
+    for n_rep in context_presentations:
+        n_trials += n_rep
 
-        self.Task = make_task_from_subject(subject_data, grid_world_size, n_abstract_actions, primitive_actions)
-        subject_data = subject_data[subject_data.Phase == 'Experiment'].copy()
+    # randomly select the first context
+    available_contexts = []
+    for ctx in range(n_ctx):
+        for jj in range(context_presentations[ctx]):
+            available_contexts.append(ctx)
 
-        # need the equivalent of SARS tuples
-        # inverse_state_loc_key = self.
+    current_context = available_contexts[np.random.randint(len(available_contexts))];
+    context_presentations[current_context] -= 1
 
-        # need: start position, end position & keypress for each step
-        self.trial_history = list()
-        self.experience = list()
-        for ii in range(self.Task.n_trials):
+    n_repeats = 0
 
-            trial_data = subject_data[subject_data.TrialNumber == ii]
+    for ii in range(n_trials):
+        context_order.append(current_context)
 
-            # needed for encoding cardinal directions numerically
-            abstract_action_key = self.Task.trials[ii].abstract_action_key
+        # determine if there is to be a context switch
+        if (np.random.rand() <= hazard_rates[n_repeats]) | (context_presentations[current_context] < 1):
 
-            # create a pd.DataFrame with relevant data for a single trial
-            # n_actions_taken = trial_data['n actions taken'][trial_data.index[-1]]
-            _trial_history = list()
-            for idx in trial_data.index:
+            # construct a list of available contexts to select
+            _available_ctx = range(n_ctx)
+            available_contexts = []
+            for ctx in _available_ctx:
+                if (context_presentations[ctx] > 0) & (ctx != current_context):
+                    available_contexts += [ctx] * context_presentations[ctx]
 
-                # create a SARS tuple
-                start_location = tuple(trial_data[u'Start Location'][idx])
-                end_location = tuple(trial_data[u'End Location'][idx])
-                s = (start_location, int(trial_data[u'context'][idx]))  # use zero-based indexing for python
-                sp = (end_location, int(trial_data[u'context'][idx]))
-                aa = abstract_action_key[trial_data[u'action'][idx]]
-                r = int(trial_data['In goal'][idx])
+            # randomly select one available context
+            if available_contexts: # check if empty!
+                current_context = available_contexts[np.random.randint(len(available_contexts))]
+                n_repeats = -1
 
-                if str(int(trial_data['key-press'][idx])) in self.Task.keyboard_action_code.keys():
-                    a = self.Task.keyboard_action_code[str(int(trial_data['key-press'][idx]))]
-                    self.experience.append(tuple([s, a, aa, r, sp]))
+        # update counters
+        n_repeats += 1
+        context_presentations[current_context] -= 1
 
-
-                _trial_history.append(pd.DataFrame({
-                    'Reward': int(trial_data[u'In goal'][idx]),
-                    'Context': int(trial_data[u'context'][idx]),
-                    'StartLocation': [tuple(trial_data[u'Start Location'][idx])],
-                    'EndLocation': [tuple(trial_data[u'End Location'][idx])],
-                    'StepNumber': trial_data['n actions taken'][idx],
-                    'KeyPress': int(trial_data['key-press'][idx])
-                }, index=[idx]))
-
-            _trial_history = pd.concat(_trial_history)
-            _trial_history.index = range(len(_trial_history))
-
-            self.trial_history.append(_trial_history)
+    return context_order
 
 
-class GenerativeModelData(object):
-    """ this is a data structure that holds all of the subjects trial by trial data, used for fitting etc.
-    """
+def make_task(context_balance, context_goals, context_maps, hazard_rates, start_locations, grid_world_size):
+    list_context = list()
+    list_start_locations = list()
+    list_goals = list()
+    list_maps = list()
+    for ctx, n_reps in enumerate(context_balance):
+        list_context += [ctx] * n_reps
+        list_start_locations += [start_locations[np.random.randint(len(start_locations))] for _ in range(n_reps)]
+        list_goals += [context_goals[ctx] for _ in range(n_reps)]
+        list_maps += [context_maps[ctx] for _ in range(n_reps)]
 
-    def __init__(self, subject_data, grid_world_size=(3, 3), n_abstract_actions=4,
-                 primitive_actions=(0, 1, 2, 3, 4, 5, 6, 7)):
+    order = randomize_order(context_balance, hazard_rates)
 
-        self.Task = make_task_from_generative(subject_data, grid_world_size, n_abstract_actions, primitive_actions)
+    list_start_locations = [list_start_locations[idx] for idx in order]
+    list_context = [list_context[idx] for idx in order]
+    list_goals = [list_goals[idx] for idx in order]
+    list_maps = [list_maps[idx] for idx in order]
+    list_walls = [[]] * len(order)
 
-        # need the equivalent of SARS tuples
-        # inverse_state_loc_key = self.
-
-        # need: start position, end position & keypress for each step
-        self.trial_history = list()
-        self.experience = list()
-        for ii in range(self.Task.n_trials):
-
-            trial_data = subject_data[subject_data.TrialNumber == ii]
-
-            # needed for encoding cardinal directions numerically
-            abstract_action_key = self.Task.trials[ii].abstract_action_key
-
-            # create a pd.DataFrame with relevant data for a single trial
-            # n_actions_taken = trial_data['n actions taken'][trial_data.index[-1]]
-            _trial_history = list()
-            for idx in trial_data.index:
-
-                # create a SARS tuple
-                start_location = tuple(trial_data[u'Start Location'][idx])
-                end_location = tuple(trial_data[u'End Location'][idx])
-                s = (start_location, int(trial_data[u'context'][idx]))  # use zero-based indexing for python
-                sp = (end_location, int(trial_data[u'context'][idx]))
-                aa = abstract_action_key[trial_data[u'action'][idx]]
-                r = int(trial_data['In goal'][idx])
-
-                if str(int(trial_data['key-press'][idx])) in self.Task.keyboard_action_code.keys():
-                    a = self.Task.keyboard_action_code[str(int(trial_data['key-press'][idx]))]
-                    self.experience.append(tuple([s, a, aa, r, sp]))
-
-
-                _trial_history.append(pd.DataFrame({
-                    'Reward': int(trial_data[u'In goal'][idx]),
-                    'Context': int(trial_data[u'context'][idx]),
-                    'StartLocation': [tuple(trial_data[u'Start Location'][idx])],
-                    'EndLocation': [tuple(trial_data[u'End Location'][idx])],
-                    'StepNumber': trial_data['n actions taken'][idx],
-                    'KeyPress': int(trial_data['key-press'][idx])
-                }, index=[idx]))
-
-            _trial_history = pd.concat(_trial_history)
-            _trial_history.index = range(len(_trial_history))
-
-            self.trial_history.append(_trial_history)
+    args = [list_start_locations, list_goals, list_context, list_maps]
+    kwargs = dict(list_walls=list_walls, grid_world_size=grid_world_size)
+    return Task(*args, **kwargs)

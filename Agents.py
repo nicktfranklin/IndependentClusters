@@ -4,7 +4,6 @@ import pandas as pd
 from GridWorld import Task, get_goal_guess_sequence
 from cython_library import RewardHypothesis, MappingHypothesis
 from cython_library import policy_iteration, policy_evaluation
-from utils import sample_cmf, softmax_to_pdf, enumerate_assignments
 
 """ these agents differ from the generative agents I typically use in that I need to pass a transition
 function (and possibly a reward function) to the agent for each trial. """
@@ -17,6 +16,67 @@ def make_q_primitive(q_abstract, mapping):
         for a in range(n):
             q_primitive[a] += q_abstract[aa] * mapping[a, aa]
     return q_primitive
+
+def enumerate_assignments(max_context_number):
+    """
+     enumerate all possible assignments of contexts to clusters for a fixed number of contexts. Has the
+     hard assumption that the first context belongs to cluster #1, to remove redundant assignments that
+     differ in labeling.
+
+    :param max_context_number: int
+    :return: list of lists, each a function that takes in a context id number and returnsa cluster id number
+    """
+    dict_assignments = [{0: 0}]  # context 0 is always in cluster 1
+
+    for contextNumber in range(1, max_context_number):
+        __inner_loop_dict_assignments = list()
+        for d in dict_assignments:
+            new_list = list()
+            for kk in range(0, max(d.values()) + 2):
+                d_copy = d.copy()
+                d_copy[contextNumber] = kk
+                new_list.append(d_copy)
+
+            __inner_loop_dict_assignments += new_list
+
+        dict_assignments = __inner_loop_dict_assignments
+
+    # turn the assignments from a dictionary of {context: cluster} to arrays where the array if a function
+    # f(context) = cluster
+    assignments = [None] * len(dict_assignments)
+    for ii, d in enumerate(dict_assignments):
+        cluster_assignment_function = np.zeros(max_context_number, dtype=np.int32)
+        for ctx_id, cluster_id in d.iteritems():
+            cluster_assignment_function[ctx_id] = cluster_id
+        assignments[ii] = cluster_assignment_function
+
+    return assignments
+
+
+def softmax_to_pdf(q_values, inverse_temperature):
+    pdf = np.exp(np.array(q_values) * float(inverse_temperature))
+    pdf = pdf / np.sum(pdf)
+    return pdf
+
+
+def sample_cmf(cmf):
+    return int(np.sum(np.random.rand() > cmf))
+
+
+def displacement_to_abstract_action(dx, dy):
+    if (not dx == 0) & (not dy == 0):
+        return -1
+
+    if dx == 1:
+        return 0
+    elif dx == -1:
+        return 1
+    elif dy == 1:
+        return 2
+    elif dy == -1:
+        return 3
+    else:
+        return -1
 
 
 class MultiStepAgent(object):
@@ -135,7 +195,7 @@ class FullInformationAgent(MultiStepAgent):
     def _transitions_to_actions(self, s, sp):
         x, y = self.task.inverse_state_loc_key[s]
         xp, yp = self.task.inverse_state_loc_key[sp]
-        return _displacement_to_abstract_action(xp - x, yp - y)
+        return displacement_to_abstract_action(xp - x, yp - y)
 
     def get_value_function(self, state):
         ''' this particluar funcito ingornse thes state b/c it is full information
@@ -254,7 +314,7 @@ class FlatAgentKnownRewards(FullInformationAgent):
     def _transitions_to_actions(self, s, sp):
         x, y = self.task.inverse_state_loc_key[s]
         xp, yp = self.task.inverse_state_loc_key[sp]
-        return _displacement_to_abstract_action(xp - x, yp - y)
+        return displacement_to_abstract_action(xp - x, yp - y)
 
 
     def select_abstract_action(self, state):
@@ -353,7 +413,7 @@ class FlatAgent(FullInformationAgent):
     def _transitions_to_actions(self, s, sp):
         x, y = self.task.inverse_state_loc_key[s]
         xp, yp = self.task.inverse_state_loc_key[sp]
-        return _displacement_to_abstract_action(xp - x, yp - y)
+        return displacement_to_abstract_action(xp - x, yp - y)
 
     def select_abstract_action(self, state):
         (x, y), c = state
@@ -1371,36 +1431,5 @@ class FlatAgentControlModel(IndependentClusterAgent):
         return -ll  # returns negative log likelihood
 
 
-def _displacement_to_abstract_action(dx, dy):
-    if (not dx == 0) & (not dy == 0):
-        return -1
-
-    if dx == 1:
-        return 0
-    elif dx == -1:
-        return 1
-    elif dy == 1:
-        return 2
-    elif dy == -1:
-        return 3
-    else:
-        return -1
-
-
-def _abstract_action_to_displacement(aa):
-    if aa == 0:
-        return 1, 0
-    if aa == 1:
-        return -1, 0
-    if aa == 2:
-        return 0, 1
-    if aa == 3:
-        return 0, -1
-    else:
-        print aa
-        raise
-
-
-# def
 
 
