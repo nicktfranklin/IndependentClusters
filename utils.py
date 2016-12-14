@@ -100,7 +100,7 @@ def make_task(context_balance, context_goals, context_maps, hazard_rates, start_
     list_maps = list()
     for ctx, n_reps in enumerate(context_balance):
         list_context += [ctx] * n_reps
-        list_start_locations += [start_locations[np.random.randint(4)] for _ in range(n_reps)]
+        list_start_locations += [start_locations[np.random.randint(len(start_locations))] for _ in range(n_reps)]
         list_goals += [context_goals[ctx] for _ in range(n_reps)]
         list_maps += [context_maps[ctx] for _ in range(n_reps)]
 
