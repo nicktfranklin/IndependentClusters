@@ -160,3 +160,7 @@ cython_library/mapping_likelihood.c
 cython_library/mapping_likelihood.so
 shared_code.pyc
 
+.idea/markdown-navigator.xml
+.idea/markdown-navigator/
+Multistep Demonstrations - 4 contexts; 3 goals (3x3; beta=2, gamma=0.80, alpha=0.50)-Copy1.ipynb
+Multistep Demonstrations - 4 contexts; 3 goals (3x3; beta=2, gamma=0.80, alpha=0.50).ipynb

@@ -1,15 +1,14 @@
 import numpy as np
 import pandas as pd
-from shared_code import sample_cmf, softmax_to_pdf, enumerate_assignments
+
 from GridWorld import Task, get_goal_guess_sequence
-from cython_library import policy_iteration, policy_evaluation#, negative_log_likelihood
 from cython_library import RewardHypothesis, MappingHypothesis
-# from RewardModel.GridWorld import
-# import matplotlib.pyplot as plt
-# from scipy.optimize import minimize
+from cython_library import policy_iteration, policy_evaluation
+from utils import sample_cmf, softmax_to_pdf, enumerate_assignments
 
 """ these agents differ from the generative agents I typically use in that I need to pass a transition
 function (and possibly a reward function) to the agent for each trial. """
+
 
 def make_q_primitive(q_abstract, mapping):
     q_primitive = np.zeros(8)
@@ -18,6 +17,7 @@ def make_q_primitive(q_abstract, mapping):
         for a in range(n):
             q_primitive[a] += q_abstract[aa] * mapping[a, aa]
     return q_primitive
+
 
 class MultiStepAgent(object):
 
@@ -47,15 +47,6 @@ class MultiStepAgent(object):
     def get_reward_function(self, state):
         pass
 
-    # def __play(self):
-    #     """ run through all of the trials
-    #     :return:
-    #     """
-    #
-    #     step_cost_counter = dict()  # these are generative parameters!
-    #     results_dataframe = list()
-    #     times_seen_ctx = dict()
-
     def generate(self):
         """ run through all of the trials of a task and output trial-by-trial data
         :return:
@@ -70,7 +61,7 @@ class MultiStepAgent(object):
         while True:
 
             # get the current state and evaluate stop condition
-            state = self.task.get_location()
+            state = self.task.get_state()
             if state is None:
                 break
 
@@ -98,12 +89,12 @@ class MultiStepAgent(object):
             if step_counter[t] == 1:
                 times_seen_ctx[c] += 1
 
-            if step_counter[t] == 100:
-                self.task.current_trial_number += 1
-                if self.task.current_trial_number < len(self.task.trials):
-                    self.task.current_trial = self.task.trials[self.task.current_trial_number]
-                else:
-                    self.task.current_trial = None
+            # if step_counter[t] == 100:
+            #     self.task.current_trial_number += 1
+            #     if self.task.current_trial_number < len(self.task.trials):
+            #         self.task.current_trial = self.task.trials[self.task.current_trial_number]
+            #     else:
+            #         self.task.current_trial = None
 
             results.append(pd.DataFrame({
                 'Start Location': [(x, y)],
@@ -146,7 +137,6 @@ class FullInformationAgent(MultiStepAgent):
         xp, yp = self.task.inverse_state_loc_key[sp]
         return _displacement_to_abstract_action(xp - x, yp - y)
 
-
     def get_value_function(self, state):
         ''' this particluar funcito ingornse thes state b/c it is full information
         :param state:
@@ -183,7 +173,6 @@ class FullInformationAgent(MultiStepAgent):
                                                                             self.gamma * value_function[o0])
 
         return q_abstract
-
 
     def select_abstract_action(self, state):
         (x, y), c = state
@@ -300,7 +289,6 @@ class FlatAgentKnownRewards(FullInformationAgent):
         pmf /= pmf.sum()
         # print "Mapping estimator (normed) :\n", pmf
         cmf = pmf.cumsum()
-        #
         # # sample the cmf
 
         pmf = self.mapping_mle[c, :, abstract_action]
@@ -309,17 +297,12 @@ class FlatAgentKnownRewards(FullInformationAgent):
                 pmf *= (1 - self.mapping_mle[c, :, aa0])
 
         pmf /= pmf.sum()
-        # print "Mapping estimator (normed2):\n", pmf
-        # H = np.sum(-pmf*np.log2(pmf))
-        # print "Entropy of mapping estimatory %.2f" % H
-
-        # print "abstract action chosen", abstract_action
 
         return sample_cmf(cmf)
 
 
 class FlatAgent(FullInformationAgent):
-    """ This Agent uses the known reward function (from the task) and estimates the mapping
+    """ This Agent learns the reward function and mapping will model based planning
     """
 
     def __init__(self, task, inverse_temperature=10.0, discount_rate=0.8, iteration_criterion=0.01, mapping_prior=0.01):
@@ -564,7 +547,7 @@ class TaskSetAgent(FlatAgentQValues):
             _mapping_mle = np.zeros(self.n_primitive_actions)
             for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
                 # print h_m.get_mapping_probability(c, a0, aa)
-                _mapping_mle[a0] = h_m.get_pr_a_given_aa(c, a0, aa)
+                _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
             # print ii, self.belief[ii], _mapping_mle
             mapping_mle += _mapping_mle * self.belief[ii]
@@ -873,7 +856,7 @@ class IndependentClusterAgent(FlatAgentQValues):
             _mapping_mle = np.zeros(self.n_primitive_actions)
             for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
                 # print h_m.get_mapping_probability(c, a0, aa)
-                _mapping_mle[a0] = h_m.get_pr_a_given_aa(c, a0, aa)
+                _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
             mapping_mle += _mapping_mle * self.belief_map[ii]
 

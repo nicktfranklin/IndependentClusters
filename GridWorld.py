@@ -273,7 +273,7 @@ class Task(object):
     def __init__(self, list_start_location, list_end_location, list_context, list_action_map,
                  grid_world_size=(3, 3),
                  n_abstract_actions=4,
-                 primitive_actions=(72, 74, 75, 76, 65, 83, 68, 70),
+                 primitive_actions=(0, 1, 2, 3, 4, 5, 6, 7),
                  list_walls=[],
                  ):
         """
@@ -328,7 +328,7 @@ class Task(object):
 
     def get_state(self):
         if self.current_trial is not None:
-            return self.current_trial.get_location()
+            return self.current_trial.get_state()
 
     def move(self, action):
         # key_press = self.primitive_actions[self.keyboard_action_code[action]]
