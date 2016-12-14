@@ -143,6 +143,7 @@ fabric.properties
 .idea/encodings.xml
 .idea/misc.xml
 .idea/modules.xml
+.idea
 
 Agents.pyc
 GridWorld.pyc
@@ -158,3 +159,4 @@ cython_library/core.so
 cython_library/mapping_likelihood.c
 cython_library/mapping_likelihood.so
 shared_code.pyc
+
