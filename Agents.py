@@ -508,7 +508,7 @@ class FlatAgentQValues(FlatAgent):
         return make_q_primitive(q_abstract, mapping)
 
 
-class TaskSetAgent(FlatAgentQValues):
+class JointClustering(FlatAgentQValues):
 
     def __init__(self, task, inverse_temperature=10.0, alpha=1.0,  discount_rate=0.8, iteration_criterion=0.01, mapping_prior=0.01):
 
