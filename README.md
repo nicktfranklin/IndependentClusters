@@ -3,7 +3,21 @@
 This is a demonstration of a reinforcement learning model that
 generalizes reward functions and transition functions independently.  
   
-It is currently a work in progress.
+The broad purposes of this is to show that it is advantageous for a
+reinforcement learner (RL) to generalize information about its goals 
+separately from information about the effects of its actions. In RL
+ terms, this corresponds to generalizing its reward functions
+ separately from transition functions. Here, we use a Bayesian model
+ that clusters contexts with a popularity-based generative process.
+ Previous human subject research has suggested that people generalize
+ between contexts consistent with such an approach (see, Collins & Frank,
+ Psych Review, 2013) but here we extend the work to multistep and
+ goal-directed domains, and add in basic conditionality by allowing
+ independent generalization of reward and transition functions.
+
+This repository contains a simplified demonstration that parallels 
+ work in human behavior. The repository, and the documentation, are
+ currently a work in progress.
 
 ### Demonstration
 ---
