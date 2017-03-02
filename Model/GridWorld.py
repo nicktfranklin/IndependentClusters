@@ -1,7 +1,6 @@
 import copy
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import time
@@ -418,7 +417,8 @@ def randomize_order(context_balance, hazard_rates):
     return context_order
 
 
-def make_task(context_balance, context_goals, context_maps, hazard_rates, start_locations, grid_world_size):
+def make_task(context_balance, context_goals, context_maps, hazard_rates, start_locations, grid_world_size,
+              list_walls=None):
     list_context = list()
     list_start_locations = list()
     list_goals = list()
@@ -435,7 +435,8 @@ def make_task(context_balance, context_goals, context_maps, hazard_rates, start_
     list_context = [list_context[idx] for idx in order]
     list_goals = [list_goals[idx] for idx in order]
     list_maps = [list_maps[idx] for idx in order]
-    list_walls = [[]] * len(order)
+    if list_walls is None:
+        list_walls = [[]] * len(order)
 
     args = [list_start_locations, list_goals, list_context, list_maps]
     kwargs = dict(list_walls=list_walls, grid_world_size=grid_world_size)

@@ -115,11 +115,11 @@ cdef class RewardHypothesis(object):
     cdef double [:,:,::1] reward_probability
     cdef list experience
 
-    def __init__(self, int n_stim, float inverse_temperature, float gamma, float stop_criterion,
+    def __init__(self, int n_stim, float inverse_temp, float gamma, float stop_criterion,
                  np.ndarray[INT_DTYPE_t, ndim=1] set_assignments, float alpha):
 
         self.n_stim = n_stim
-        self.inverse_temperature = inverse_temperature
+        self.inverse_temperature = inverse_temp
         self.gamma = gamma
         self.iteration_criterion = stop_criterion
         self.set_assignments = set_assignments
@@ -191,6 +191,9 @@ cdef class RewardHypothesis(object):
 
     def select_abstract_action_pmf(self, int s, int c, double[:,:,::1] transition_function):
         cdef np.ndarray[DTYPE_t, ndim=1] q_values = self.get_abstract_action_q_values(s, c, transition_function)
+
+        # we need q-values to properly consider multiple options of equivalent optimality, but we can just always
+        # pass a very high value for the temperature
         cdef np.ndarray[DTYPE_t, ndim=1] pmf = np.exp(np.array(q_values) * float(self.inverse_temperature))
         pmf = pmf / np.sum(pmf)
 
