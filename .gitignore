@@ -148,7 +148,6 @@ fabric.properties
 Agents.pyc
 GridWorld.pyc
 IndependentClustering_Demo/
-__init__.py
 __init__.pyc
 cython_library/Hypotheses.c
 cython_library/Hypotheses.so
