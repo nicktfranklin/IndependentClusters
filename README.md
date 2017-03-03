@@ -1,4 +1,4 @@
-# IndependentClustering_Demo
+# Compositional Clustering Demo
 
 This is a demonstration of a reinforcement learning model that
 generalizes components of task structure independently.  
