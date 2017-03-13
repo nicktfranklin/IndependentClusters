@@ -21,12 +21,58 @@ cdef class Hypothesis(object):
     cdef double get_log_posterior(self):
         pass
 
+
+cdef class MappingCluster(object):
+    cdef double [:,::1] mapping_history, mapping_mle, pr_aa_given_a
+    cdef double [:] abstract_action_counts, primitive_action_counts
+    cdef int n_primitive_actions, n_abstract_actions
+
+    def __init__(self, int n_primitive_actions, int n_abstract_actions, float mapping_prior):
+
+        cdef double[:, ::1] mapping_history, mapping_mle, pr_aa_given_a
+        cdef double[:] abstract_action_counts, primitive_action_counts
+
+        mapping_history = np.ones((n_primitive_actions, n_abstract_actions + 1), dtype=float) * mapping_prior
+        abstract_action_counts = np.ones(n_abstract_actions+1, dtype=float) *  mapping_prior * n_primitive_actions
+        mapping_mle = np.ones((n_primitive_actions, n_abstract_actions + 1),  dtype=float) * \
+                      (1.0 / n_primitive_actions)
+
+        primitive_action_counts = np.ones(n_primitive_actions, dtype=DTYPE) * mapping_prior * n_abstract_actions
+        pr_aa_given_a = np.ones((n_primitive_actions, n_abstract_actions + 1), dtype=DTYPE) * \
+                        (1.0 / n_abstract_actions)
+
+        self.mapping_history = mapping_history
+        self.abstract_action_counts = abstract_action_counts
+        self.mapping_mle = mapping_mle
+        self.primitive_action_counts = primitive_action_counts
+        self.pr_aa_given_a = pr_aa_given_a
+
+        self.n_primitive_actions = n_primitive_actions
+        self.n_abstract_actions = n_abstract_actions
+
+    def update(self, int a, int aa):
+        cdef int aa0, a0
+        self.mapping_history[a, aa] += 1.0
+        self.abstract_action_counts[aa] += 1.0
+        self.primitive_action_counts[a] += 1.0
+
+        for aa0 in range(self.n_abstract_actions):
+            for a0 in range(self.n_primitive_actions):
+                self.mapping_mle[a0, aa0] = self.mapping_history[a0, aa0] / self.abstract_action_counts[aa0]
+
+                # p(A|a, k) estimator
+                self.pr_aa_given_a[a0, aa0] = self.mapping_history[a0, aa0] / self.primitive_action_counts[a0]
+
+    def get_mapping_mle(self, int a, int aa):
+        return self.mapping_mle[a, aa]
+
+    def get_likelihood(self, int a, int aa):
+        return self.pr_aa_given_a[a, aa]
+
 cdef class MappingHypothesis(object):
 
-        cdef double [:,:,::1] mapping_history, mapping_mle, pr_aa_given_a
-        cdef double [:,::1] abstract_action_counts, primitive_action_counts
-        cdef dict set_assignments
-        cdef double prior_log_prob
+        cdef dict set_assignments, clusters
+        cdef double prior_log_prob, alpha, mapping_prior
         cdef list experience
         cdef int n_abstract_actions, n_primitive_actions
 
@@ -34,32 +80,15 @@ cdef class MappingHypothesis(object):
                      dict set_assignments, float alpha, float mapping_prior):
 
             cdef int n_k = len(set(set_assignments))
-            # print n_k, set_assignments
             self.set_assignments = set_assignments
             self.n_primitive_actions = n_primitive_actions
             self.n_abstract_actions = n_abstract_actions
+            self.alpha = alpha
+            self.mapping_prior = mapping_prior
 
-            cdef double[:, :, ::1] mapping_history, mapping_mle, pr_aa_given_a
-            cdef double[:, ::1] abstract_action_counts, primitive_action_counts
-
-            mapping_history = np.ones((n_k, n_primitive_actions, n_abstract_actions + 1), dtype=float) * mapping_prior
-            abstract_action_counts = np.ones((n_k, n_abstract_actions+1), dtype=float) *  mapping_prior * n_primitive_actions
-            mapping_mle = np.ones((n_k, n_primitive_actions, n_abstract_actions + 1),  dtype=float) * \
-                          (1.0 / n_primitive_actions)
-
-            # print "initialize mapping hypothesis"
-            # print np.array(mapping_history)
-            # print np.array(abstract_action_counts)
-
-            primitive_action_counts = np.ones((n_k, n_primitive_actions), dtype=DTYPE) * mapping_prior * n_abstract_actions
-            pr_aa_given_a = np.ones((n_k, n_primitive_actions, n_abstract_actions + 1), dtype=DTYPE) * \
-                            (1.0 / n_abstract_actions)
-
-            self.mapping_history = mapping_history
-            self.abstract_action_counts = abstract_action_counts
-            self.primitive_action_counts = primitive_action_counts
-            self.mapping_mle = mapping_mle
-            self.pr_aa_given_a = pr_aa_given_a
+            # initialize mapping clusters
+            self.clusters = {k: MappingCluster(n_primitive_actions, n_abstract_actions, mapping_prior)
+                             for k in set_assignments.keys()}
 
             # store the prior probability
             self.prior_log_prob = get_prior_log_probability(set_assignments, alpha)
@@ -67,23 +96,25 @@ cdef class MappingHypothesis(object):
             # need to store all experiences for log probability calculations
             self.experience = list()
 
+        cdef _update_prior(self):
+            self.prior_log_prob = get_prior_log_probability(self.set_assignments, self.alpha)
+
+        cdef _get_cluster_average(self):
+            pass
+
+        cdef update_assignment(self, int c, int k):
+            # if we are assigning a context to a previous cluster, it's pretty simple,
+            # otherwise we need a new set of statistics
+            if k in self.set_assignments.values():
+                self.clusters[k] = MappingCluster(self.n_primitive_actions, self.n_abstract_actions, self.mapping_prior)
+            self.set_assignments[c] = k
+
+
         def updating_mapping(self, int c, int a, int aa):
-            cdef int aa0, a0, ts
-
-            k = self.set_assignments[c]
-
-            self.mapping_history[k, a, aa] += 1.0
-            self.abstract_action_counts[k, aa] += 1.0
-            self.primitive_action_counts[k, a] += 1.0
-
-            for aa0 in range(self.n_abstract_actions):
-                for a0 in range(self.n_primitive_actions):
-                    self.mapping_mle[k, a0, aa0] = self.mapping_history[k, a0, aa0] / self.abstract_action_counts[k, aa0]
-
-                    # p(A|a, k) estimator
-                    self.pr_aa_given_a[k, a0, aa0] = self.mapping_history[k, a0, aa0] / self.primitive_action_counts[k, a0]
-
-
+            cdef int k = self.set_assignments[c]
+            cdef MappingCluster cluster = self.clusters[k]
+            cluster.update(a, aa)
+            self.clusters[k] = cluster
 
             # need to store all experiences for log probability calculations
             self.experience.append((k, a, aa))
@@ -91,9 +122,12 @@ cdef class MappingHypothesis(object):
         def get_log_likelihood(self):
             cdef double log_likelihood = 0
             cdef int t, k, a, aa
+            cdef MappingCluster cluster
+
             #loop through experiences and get posterior
             for k, a, aa in self.experience:
-                log_likelihood += log(self.pr_aa_given_a[k, a, aa])
+                cluster = self.clusters[k]
+                log_likelihood += log(cluster.get_likelihood(a, aa))
 
             return log_likelihood
 
@@ -101,7 +135,8 @@ cdef class MappingHypothesis(object):
             return self.prior_log_prob + self.get_log_likelihood()
 
         def get_mapping_probability(self, int c, int a, int aa):
-            return self.mapping_mle[self.set_assignments[c], a, aa]
+            cdef MappingCluster cluster = self.clusters[self.set_assignments[c]]
+            return cluster.get_mapping_mle(a, aa)
 
         def get_log_prior(self):
             return self.prior_log_prob
