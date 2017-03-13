@@ -109,7 +109,7 @@ cpdef np.ndarray[DTYPE_t] policy_evaluation(
             return np.array(V)
 
 
-cpdef double get_prior_log_probability(np.ndarray[INT_DTYPE_t, ndim=1] ctx_assignment, double alpha):
+cpdef double get_prior_log_probability(dict ctx_assignment, double alpha):
     """This takes in an assignment of contexts to groups and returns the
     prior probability over the assignment using a CRP
     :param alpha:
@@ -118,10 +118,9 @@ cpdef double get_prior_log_probability(np.ndarray[INT_DTYPE_t, ndim=1] ctx_assig
     cdef int ii, k
     cdef double log_prob = 0
 
-    cdef int n_ctx = len(ctx_assignment)
-    cdef int n_ts = len(set(ctx_assignment))
-    cdef int [:] n_k = np.zeros(n_ts, dtype=INT_DTYPE)
-    # cdef int[:] nk_view = n_k
+    cdef int n_ctx = len(ctx_assignment.keys())
+    cdef int K = len(set(ctx_assignment.values()))
+    cdef int [:] n_k = np.zeros(K, dtype=INT_DTYPE)
 
     n_k[0] = 1
     for ii in range(1, n_ctx):

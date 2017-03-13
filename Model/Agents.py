@@ -41,17 +41,17 @@ def enumerate_assignments(max_context_number):
             __inner_loop_dict_assignments += new_list
 
         dict_assignments = __inner_loop_dict_assignments
-
-    # turn the assignments from a dictionary of {context: cluster} to arrays where the array if a function
-    # f(context) = cluster
-    assignments = [None] * len(dict_assignments)
-    for ii, d in enumerate(dict_assignments):
-        cluster_assignment_function = np.zeros(max_context_number, dtype=np.int32)
-        for ctx_id, cluster_id in d.iteritems():
-            cluster_assignment_function[ctx_id] = cluster_id
-        assignments[ii] = cluster_assignment_function
-
-    return assignments
+    return dict_assignments
+    # # turn the assignments from a dictionary of {context: cluster} to arrays where the array if a function
+    # # f(context) = cluster
+    # assignments = [None] * len(dict_assignments)
+    # for ii, d in enumerate(dict_assignments):
+    #     cluster_assignment_function = np.zeros(max_context_number, dtype=np.int32)
+    #     for ctx_id, cluster_id in d.iteritems():
+    #         cluster_assignment_function[ctx_id] = cluster_id
+    #     assignments[ii] = cluster_assignment_function
+    #
+    # return assignments
 
 
 def softmax_to_pdf(q_values, inverse_temperature):
