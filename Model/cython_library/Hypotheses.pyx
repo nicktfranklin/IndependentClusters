@@ -16,10 +16,6 @@ ctypedef np.int32_t INT_DTYPE_t
 cdef extern from "math.h":
     double log(double x)
 
-cdef class Hypothesis(object):
-
-    cdef double get_log_posterior(self):
-        pass
 
 
 cdef class MappingCluster(object):
@@ -142,6 +138,55 @@ cdef class MappingHypothesis(object):
             return self.prior_log_prob
 
 
+cdef class RewardCluster(object):
+    cdef double [:] reward_visits, reward_received, reward_function, reward_received_bool
+    cdef double [:,::1] reward_probability
+
+    def __init__(self, int n_stim):
+        # rewards!
+        self.reward_visits = np.ones(n_stim) * 0.011
+        self.reward_received = np.ones(n_stim) * 0.01
+        self.reward_function = np.ones(n_stim) * (0.01/0.011)
+
+        # need a separate tracker for the probability a reward was received
+        self.reward_received_bool = np.ones(n_stim) * 1e-5
+        self.reward_probability = np.ones((n_stim, 2)) * (1e-5/2e-5)
+
+    def update(self, int sp, int r):
+        self.reward_visits[sp] += 1.0
+        self.reward_received[sp] += r
+        self.reward_function[sp] = self.reward_received[sp] / self.reward_visits[sp]
+
+        self.reward_received_bool[sp] += float(r > 0)
+        self.reward_probability[sp, 1] = self.reward_received_bool[sp] / self.reward_visits[sp]
+        self.reward_probability[sp, 0] = 1 - self.reward_probability[sp, 1]
+
+    def get_observation_probability(self, int sp, int r):
+        idx = int(r>0)
+        return self.reward_probability[sp, idx]
+
+    def get_reward_function(self):
+        return self.reward_function
+
+    def get_reward_visits(self):
+        return self.reward_function
+
+    def set_prior(self, list_goals):
+        cdef int s
+        cdef int n_stim = np.shape(self.reward_visits)[0]
+
+        # rewards!
+        self.reward_visits = np.ones(n_stim) * 0.0001
+        self.reward_received = np.ones(n_stim) * 0.00001
+
+        for s in list_goals:
+            self.reward_visits[s] += 0.001
+            self.reward_received[s] += 0.001
+
+        for s in range(n_stim):
+            self.reward_function[s] = self.reward_received[s] / self.reward_visits[s]
+
+
 cdef class RewardHypothesis(object):
     cdef double gamma, iteration_criterion, log_prior, inverse_temperature
     cdef int n_stim
@@ -161,14 +206,8 @@ cdef class RewardHypothesis(object):
 
         cdef int n_k = len(set(cluster_assignments))
 
-        # rewards!
-        self.reward_visits = np.ones((n_k, n_stim)) * 0.011
-        self.reward_received = np.ones((n_k, n_stim)) * 0.01
-        self.reward_function = np.ones((n_k, n_stim)) * (0.01/0.011)
-
-        # need a separate tracker for the probability a reward was received
-        self.reward_received_bool = np.ones((n_k, n_stim)) * 1e-5
-        self.reward_probability = np.ones((n_k, n_stim, 2)) * (1e-5/2e-5)
+        # initialize mapping clusters
+        self.clusters = {k: RewardCluster(n_stim) for k in cluster_assignments.keys()}
 
         # initialize posterior
         self.experience = list()
@@ -176,22 +215,18 @@ cdef class RewardHypothesis(object):
 
     def update(self, int c, int sp, int r):
         cdef int k = self.cluster_assignments[c]
-        self.reward_visits[k, sp] += 1.0
-        self.reward_received[k, sp] += r
-        self.reward_function[k, sp] = self.reward_received[k, sp] / self.reward_visits[k, sp]
-
-        self.reward_received_bool[k, sp] += float(r > 0)
-        self.reward_probability[k, sp, 1] = self.reward_received_bool[k, sp] / self.reward_visits[k, sp]
-        self.reward_probability[k, sp, 0] = 1 - self.reward_probability[k, sp, 1]
-
+        cdef RewardCluster cluster = self.clusters[k]
+        cluster.update(sp, r)
+        self.clusters[k] = cluster
         self.experience.append((k, sp, r))
 
     cpdef double get_log_likelihood(self):
         cdef double log_likelihood = 0
-        cdef int t, k, sp, r
+        cdef int k, sp, r
+        cdef RewardCluster cluster
         for k, sp, r in self.experience:
-            t = int(r>0)
-            log_likelihood += log(self.reward_probability[k, sp, t])
+            cluster = self.clusters[k]
+            log_likelihood += log(cluster.get_observation_probability(sp, r))
         return log_likelihood
 
     def get_log_posterior(self):
@@ -202,13 +237,16 @@ cdef class RewardHypothesis(object):
 
     cpdef np.ndarray[DTYPE_t, ndim=1] get_abstract_action_q_values(self, int s, int c, double[:,:,::1] transition_function):
         cdef int k = self.cluster_assignments[c]
-        pi = policy_iteration(np.asarray(transition_function), np.asarray(self.reward_function[k, :]), gamma=self.gamma,
+        cdef RewardCluster cluster = self.clusters[k]
+        cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.asarray(cluster.get_reward_function())
+
+        pi = policy_iteration(np.asarray(transition_function), reward_function, gamma=self.gamma,
                               stop_criterion=self.iteration_criterion)
 
         v = policy_evaluation(
             pi,
             np.asarray(transition_function),
-            np.asarray(self.reward_function[k, :]),
+            reward_function,
             gamma=self.gamma,
             stop_criterion=self.iteration_criterion
         )
@@ -220,7 +258,7 @@ cdef class RewardHypothesis(object):
         cdef int aa0, sp0
         for aa0 in range(n_abstract_actions):
             for sp0 in range(self.n_stim):
-                q_values[aa0] += transition_function[s, aa0, sp0] * (self.reward_function[k, sp0] + self.gamma * v[sp0])
+                q_values[aa0] += transition_function[s, aa0, sp0] * (reward_function[sp0] + self.gamma * v[sp0])
 
         return np.array(q_values)
 
@@ -236,34 +274,23 @@ cdef class RewardHypothesis(object):
 
 
     def get_reward_function(self, int c):
-        cdef int ts = self.cluster_assignments[c]
-        cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.zeros(self.n_stim, dtype=np.float)
+        cdef int k = self.cluster_assignments[c]
+        cdef RewardCluster cluster = self.clusters[k]
+        cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.asarray(cluster.get_reward_function())
 
-        for s in range(self.n_stim):
-            reward_function[s] = self.reward_function[ts, s]
         return reward_function
     
     def get_reward_visits(self, int c):
         cdef int k = self.cluster_assignments[c]
-        cdef np.ndarray[DTYPE_t, ndim=1] reward_visits = np.zeros(self.n_stim, dtype=np.float)
+        cdef RewardCluster cluster = self.clusters[k]
+        cdef np.ndarray[DTYPE_t, ndim=1] reward_visits = np.asarray(cluster.get_reward_visits())
 
-        for s in range(self.n_stim):
-            reward_visits[s] = self.reward_visits[k, s]
         return reward_visits
 
     def set_reward_prior(self, list list_goals):
-        cdef int n_k, n_stim, ts, s
-        n_k, n_stim = np.shape(self.reward_visits)
+        cdef int k
+        cdef RewardCluster cluster
 
-        # rewards!
-        self.reward_visits = np.ones((n_k, n_stim)) * 0.0001
-        self.reward_received = np.ones((n_k, n_stim)) * 0.00001
-
-        for ts in range(n_k):
-            for s in list_goals:
-                self.reward_visits[ts, s] += 0.001
-                self.reward_received[ts, s] += 0.001
-
-        for ts in range(n_k):
-            for s in range(n_stim):
-                self.reward_function[ts, s] = self.reward_received[ts, s] / self.reward_visits[ts, s]
+        for k in range(len(self.clusters)):
+            cluster = self.clusters[k]
+            cluster.set_prior(list_goals)

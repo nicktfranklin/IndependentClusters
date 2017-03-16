@@ -25,7 +25,7 @@ def enumerate_assignments(max_context_number):
      differ in labeling.
 
     :param max_context_number: int
-    :return: list of lists, each a function that takes in a context id number and returnsa cluster id number
+    :return: list of lists, each a function that takes in a context id number and returns a cluster id number
     """
     dict_assignments = [{0: 0}]  # context 0 is always in cluster 1
 
