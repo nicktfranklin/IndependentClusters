@@ -109,6 +109,43 @@ cpdef np.ndarray[DTYPE_t] policy_evaluation(
             return np.array(V)
 
 
+cpdef np.ndarray[DTYPE_t] value_iteration(
+        np.ndarray[DTYPE_t, ndim=3] transition_function,
+        np.ndarray[DTYPE_t, ndim=1] reward_function,
+        float gamma,
+        float stop_criterion):
+
+    cdef double [:,:,::1] T = transition_function
+    cdef double [:] R = reward_function
+
+    cdef int n_s, sp, s, a, n_a
+    n_s = transition_function.shape[0]
+    n_a = transition_function.shape[1]
+    cdef double [:] V = np.zeros(n_s, dtype=DTYPE)
+    cdef double v, V_temp, v_sa_temp
+
+    stop_criterion **= 2
+    while True:
+        delta = 0
+        for s in range(n_s):
+            v = V[s]
+
+            V_temp = 0
+            # get the value of each action, then take the max value of the action for the state
+            for a in range(n_a):
+                v_sa_temp = 0
+                for sp in range(n_s):
+                    v_sa_temp += T[s, a, sp] * (R[sp] + gamma * V[sp])
+                V_temp = fmax(v_sa_temp, V_temp)
+
+            V[s] = V_temp
+
+            delta = fmax(delta, (v - V[s])**2)
+
+        if delta < stop_criterion:
+            return np.array(V)
+
+
 cpdef double get_prior_log_probability(dict ctx_assignment, double alpha):
     """This takes in an assignment of contexts to groups and returns the
     prior probability over the assignment using a CRP

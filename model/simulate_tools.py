@@ -5,7 +5,7 @@ import pandas as pd
 from numpy.random.mtrand import uniform
 from tqdm import tqdm
 
-from model import make_task, JointClustering, IndependentClusterAgent, FlatAgent, JointPrior, IndependentPrior
+from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, JointPrior, IndependentPrior
 
 
 # Define a function to Simulate the Models
@@ -38,7 +38,7 @@ def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0):
     for ii in tqdm(range(n_sim)):
         results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs)
         results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs)
-        results_fl[ii] = simulate_one(FlatAgent, ii, task_kwargs)
+        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs)
 
     results_jc = pd.concat(results_jc)
     results_ic = pd.concat(results_ic)
@@ -68,7 +68,7 @@ def simulate_random_tasks(n_sim, task_generator, agent_kwargs=None, alpha=2.0):
 
         results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs)
         results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs)
-        results_fl[ii] = simulate_one(FlatAgent, ii, task_kwargs)
+        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs)
 
     results_jc = pd.concat(results_jc)
     results_ic = pd.concat(results_ic)

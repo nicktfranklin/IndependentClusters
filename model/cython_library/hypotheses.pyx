@@ -4,7 +4,7 @@ import numpy as np
 cimport numpy as np
 cimport cython
 
-from core import policy_iteration, policy_evaluation
+from core import value_iteration
 from core import get_prior_log_probability
 
 DTYPE = np.float
@@ -240,11 +240,7 @@ cdef class RewardHypothesis(object):
         cdef RewardCluster cluster = self.clusters[k]
         cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.asarray(cluster.get_reward_function())
 
-        pi = policy_iteration(np.asarray(transition_function), reward_function, gamma=self.gamma,
-                              stop_criterion=self.iteration_criterion)
-
-        v = policy_evaluation(
-            pi,
+        v = value_iteration(
             np.asarray(transition_function),
             reward_function,
             gamma=self.gamma,
