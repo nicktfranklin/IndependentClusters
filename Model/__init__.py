@@ -1,2 +1,4 @@
-from Agents import *
-from GridWorld import *
+from priors import IndependentPrior, JointPrior
+from agents import *
+from gridworld import *
+from simulate_tools import *

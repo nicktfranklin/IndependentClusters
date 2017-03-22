@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from GridWorld import Task, get_goal_guess_sequence
+from gridworld import Task, get_goal_guess_sequence
 from cython_library import RewardHypothesis, MappingHypothesis
 from cython_library import policy_iteration, policy_evaluation
 

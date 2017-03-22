@@ -60,5 +60,5 @@ This library run on Python 2.7 and unlike most python code, requries
 * `Demonstration.ipynb`: The jupyter notebooks shows a basic comparison in
  the performance of the models.
 * `Gridworld.py`: Defines the task environments
-* `Agents.py`: Defines the reinforcement learning agents. Core functions 
+* `agents.py`: Defines the reinforcement learning agents. Core functions 
     rely on cython

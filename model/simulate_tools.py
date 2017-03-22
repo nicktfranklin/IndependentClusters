@@ -44,9 +44,9 @@ def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0):
     results_ic = pd.concat(results_ic)
     results_fl = pd.concat(results_fl)
 
-    results_jc['model'] = ['Joint Clusterting'] * len(results_jc)
-    results_ic['model'] = ['Independent Clustering'] * len(results_ic)
-    results_fl['model'] = ['Flat Agent'] * len(results_fl)
+    results_jc['Model'] = ['Joint Clusterting'] * len(results_jc)
+    results_ic['Model'] = ['Independent Clustering'] * len(results_ic)
+    results_fl['Model'] = ['Flat Agent'] * len(results_fl)
     return pd.concat([results_jc, results_ic, results_fl])
 
 
@@ -78,9 +78,9 @@ def simulate_random_tasks(n_sim, task_generator, agent_kwargs=None, alpha=2.0):
     assert type(results_jc) == pd.DataFrame
     assert type(results_fl) == pd.DataFrame
 
-    results_jc['model'] = ['Joint Clusterting'] * len(results_jc)
-    results_ic['model'] = ['Independent Clustering'] * len(results_ic)
-    results_fl['model'] = ['Flat Agent'] * len(results_fl)
+    results_jc['Model'] = ['Joint Clusterting'] * len(results_jc)
+    results_ic['Model'] = ['Independent Clustering'] * len(results_ic)
+    results_fl['Model'] = ['Flat Agent'] * len(results_fl)
     return pd.concat([results_jc, results_ic, results_fl]), pd.DataFrame(task_stats)
 
 

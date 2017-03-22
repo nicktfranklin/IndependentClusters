@@ -170,10 +170,10 @@ class GridWorld(object):
     def get_state(self):
         return self.current_location, self.context
 
-    def draw_state(self, fig=None, ax=None):
+    def draw_state(self, fig=None, ax=None, draw_goal=True):
         x, y = self.current_location
 
-        if ax == None:
+        if ax is None:
             fig, ax = plt.subplots(figsize=(2, 2))
 
         self._draw_grid(ax=ax)
@@ -182,7 +182,8 @@ class GridWorld(object):
         ax.plot([x, x], [y, y], 'bo', markersize=15)
 
         # draw the goal location:
-        ax.annotate('G', xy=self.goal_location, xytext=self.goal_location, size=15)
+        if draw_goal:
+            ax.annotate('G', xy=self.goal_location, xytext=self.goal_location, size=15)
         return fig, ax
 
     def draw_move(self, key_press, fig=None, ax=None):
@@ -338,6 +339,206 @@ class Task(object):
         s, _, aa, r, sp = self.current_trial.move(action)
 
         if self.current_trial.goal_check():
+            self.current_trial_number += 1
+            if self.current_trial_number < len(self.trials):
+                self.current_trial = self.trials[self.current_trial_number]
+            else:
+                self.current_trial = None
+
+        return s, action, aa, r, sp
+
+
+class Room(GridWorld):
+
+    def __init__(self, grid_world_size, walls, action_map, door, start_location, context,
+                 state_location_key=None, n_abstract_actions=4):
+        super(object, self).__init__()
+
+        """
+
+        :param grid_world_size: 2x2 tuple
+        :param walls: list of [x, y, 'direction_of_wall'] lists
+        :param action_map: dictionary of from {a: 'cardinal direction'}
+        :param door: 3-tuple of state action pair: (x, y, aa)
+        :param start_location: tuple (x, y)
+        :param n_abstract_actions: int
+        :return:
+        """
+        self.start_location = start_location
+        self.current_location = start_location
+        self.door = door
+        self.grid_world_size = grid_world_size
+        self.context = int(context)
+        self.walls = walls
+
+        # need to create a transition function and reward function, which pretty much define the grid world
+        n_states = grid_world_size[0] * grid_world_size[1]  # assume rectangle...
+        if state_location_key is None:
+            self.state_location_key = {
+                (x, y): (y + x * grid_world_size[1]) for y in range(grid_world_size[1]) for x in
+                range(grid_world_size[0])
+                }
+        else:
+            self.state_location_key = state_location_key
+
+        self.inverse_state_loc_key = {value: key for key, value in self.state_location_key.iteritems()}
+
+        # define movements as change in x and y position:
+        self.cardinal_direction_key = {u'up': (0, 1), u'down': (0, -1), u'left': (-1, 0), u'right': (1, 0)}
+        self.abstract_action_key = {dir_: ii for ii, dir_ in enumerate(self.cardinal_direction_key.keys())}
+        self.abstract_action_key[u'wait'] = -1
+
+        self.inverse_abstract_action_key = {ii: dir_ for dir_, ii in self.abstract_action_key.iteritems()}
+
+        # redefine walls pythonicly:
+        wall_key = {(x, y): wall_side for x, y, wall_side in walls}
+        wall_list = wall_key.keys()
+
+        # make transition function (usable by the agent)!
+        # transition function: takes in state, abstract action, state' and returns probability
+        self.transition_function = np.zeros((n_states, n_abstract_actions, n_states), dtype=float)
+        for s in range(n_states):
+
+            x, y = self.inverse_state_loc_key[s]
+
+            # cycle through movement, check for both walls and for
+            for movement, (dx, dy) in self.cardinal_direction_key.iteritems():
+                aa = self.abstract_action_key[movement]
+
+                # check if the movement stays on the grid
+                if (x + dx, y + dy) not in self.state_location_key.keys():
+                    self.transition_function[s, aa, s] = 1
+
+                elif (x, y) in wall_list:
+                    # check if the movement if blocked by a wall
+                    if wall_key[(x, y)] == movement:
+                        self.transition_function[s, aa, s] = 1
+                    else:
+                        sp = self.state_location_key[(x + dx, y + dy)]
+                        self.transition_function[s, aa, sp] = 1
+                else:
+                    sp = self.state_location_key[(x + dx, y + dy)]
+                    self.transition_function[s, aa, sp] = 1
+
+        # make reward function
+        self.reward_function = np.zeros((n_states, n_abstract_actions+1), dtype=float)
+        self.reward_function[:, :] = -0.1
+        x_d, y_d, aa_d = door
+        self.reward_function[self.state_location_key[(x_d, y_d)], aa_d] = 1.0
+
+        # store the action map
+        self.action_map = {int(key): value for key, value in action_map.iteritems()}
+
+        self.n_primitive_actions = len(self.action_map.keys())
+
+        # define a successor function in terms of key-press for game interactions
+        # successor function: takes in location (x, y) and action (button press) and returns successor location (x, y)
+        self.successor_function = dict()
+        for s in range(n_states):
+            x, y = self.inverse_state_loc_key[s]
+
+            # this loops through keys associated with a movement (valid key-presses only)
+            for key_press, movement in self.action_map.iteritems():
+                dx, dy = self.cardinal_direction_key[movement]
+
+                if (x + dx, y + dy) not in self.state_location_key.keys():
+                    self.successor_function[((x, y), key_press)] = (x, y)
+
+                # check the walls for valid movements
+                elif (x, y) in wall_list:
+                    if wall_key[(x, y)] == movement:
+                        self.successor_function[((x, y), key_press)] = (x, y)
+                    else:
+                        self.successor_function[((x, y), key_press)] = (x + dx, y + dy)
+                else:
+                    self.successor_function[((x, y), key_press)] = (x + dx, y + dy)
+
+        # store keys used in the task for lookup value
+        self.keys_used = [key for key in self.action_map.iterkeys()]
+
+        # store walls
+        self.wall_key = wall_key
+
+    def door_check(self, aa):
+        return (self.current_location[0], self.current_location[1], aa) == self.goal_location
+
+
+class RoomsProblem(object):
+    """ This is a data structure that holds all of the trials a subject encountered in a format readable by the models.
+    This is used primarily for the purposes of initialization of the agents.
+    """
+
+    def __init__(self, list_start_location, list_doors, list_context, list_action_map,
+                 grid_world_size=(3, 3),
+                 n_abstract_actions=4,
+                 primitive_actions=(0, 1, 2, 3, 4, 5, 6, 7),
+                 list_walls=None,
+                 ):
+        """
+
+        :param subject_data: pandas.DataFrame (raw from experiment)
+        :return: None
+        """
+
+        if list_walls is None:
+            list_walls = []
+
+        self.grid_world_size = grid_world_size
+        self.n_states = grid_world_size[0] * grid_world_size[1]
+        self.n_abstract_actions = n_abstract_actions
+        self.n_primitive_actions = len(primitive_actions)
+        self.primitive_actions = primitive_actions
+
+        # count the number of trials
+        self.n_trials = len(list_context)
+
+        # count the number of contexts
+        self.n_ctx = len(set(list_context))
+
+        # create a state location key
+        self.state_location_key = {
+            (x, y): (y + x * grid_world_size[1]) for y in range(grid_world_size[1]) for x in range(grid_world_size[0])
+            }
+        self.inverse_state_loc_key = {value: key for key, value in self.state_location_key.iteritems()}
+
+        # create a key-code between keyboard presses and action numbers
+        self.keyboard_action_code = {unicode(keypress): a for a, keypress in enumerate(primitive_actions)}
+
+        # for each trial, I need the walls, action_map and goal location and start location to define the grid world
+        self.trials = list()
+        if len(list_walls) == 0:
+            list_walls = [None] * self.n_trials
+
+        for ii in range(self.n_trials):
+
+            self.trials.append(
+                Room(
+                    grid_world_size,
+                    list_walls[ii],
+                    list_action_map[ii],
+                    list_doors[ii],
+                    list_start_location[ii],
+                    list_context[ii],
+                    state_location_key=self.state_location_key,
+                    n_abstract_actions=n_abstract_actions
+                )
+            )
+
+        # set the current trial
+        self.current_trial_number = 0
+        self.current_trial = self.trials[0]
+
+    def get_state(self):
+        if self.current_trial is not None:
+            return self.current_trial.get_state()
+
+    def move(self, action):
+        # key_press = self.primitive_actions[self.keyboard_action_code[action]]
+
+        # self.current_trial.draw_move(key_press)
+        s, _, aa, r, sp = self.current_trial.move(action)
+
+        if self.current_trial.door_check(aa):
             self.current_trial_number += 1
             if self.current_trial_number < len(self.trials):
                 self.current_trial = self.trials[self.current_trial_number]
