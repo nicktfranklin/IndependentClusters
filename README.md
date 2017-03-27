@@ -39,6 +39,12 @@ This repository contains a simplified demonstration that parallels
 A demonstration of the model's performance can be found in the 
 notebook file `Demonstration.ipynb`
 
+### Normative analysis of generalization
+---
+IN PROGRESS: An information theoretic analysis detailing under what conditions
+ it is useful to cluster can be found in `NormativeAnalysis.ipynb`
+
+
 
 ### Installation Instructions
 --- 
