@@ -1251,4 +1251,232 @@ class FlatControlAgent(FlatAgentQValues):
 
 
 
+class MapClusteringAgent(FlatAgentQValues):
 
+    def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8, iteration_criterion=0.01,
+                 mapping_prior=0.01, epsilon=0.025):
+
+        assert type(task) is Task
+        super(FullInformationAgent, self).__init__(task)
+
+        self.inverse_temperature = inverse_temperature
+        self.gamma = discount_rate
+        self.iteration_criterion = iteration_criterion
+        self.current_trial = 0
+        self.n_abstract_actions = self.task.n_abstract_actions
+        self.n_primitive_actions = self.task.n_primitive_actions
+        self.epsilon = epsilon
+
+        # get the list of enumerated set assignments!
+        map_set_assignments = enumerate_assignments(self.task.n_ctx)
+        set_assignments = [{ii: ii for ii in range(task.n_ctx)}]
+
+        # create task sets, each containing a reward and mapping hypothesis with the same assignement
+        self.reward_hypotheses = []
+        self.mapping_hypotheses = []
+        for assignment in set_assignments:
+            self.reward_hypotheses.append(
+                RewardHypothesis(
+                    self.task.n_states, inverse_temperature, discount_rate, iteration_criterion,
+                    assignment, alpha
+                )
+            )
+
+        for assignment in map_set_assignments:
+            self.mapping_hypotheses.append(
+                MappingHypothesis(
+                    self.task.n_primitive_actions, self.task.n_abstract_actions, assignment, alpha, mapping_prior
+                ),
+            )
+
+        self.belief_rew = np.ones(len(self.reward_hypotheses)) / float(len(self.reward_hypotheses))
+        self.belief_map = np.ones(len(self.mapping_hypotheses)) / float(len(self.mapping_hypotheses))
+
+    def updating_mapping(self, c, a, aa):
+        for h_m in self.mapping_hypotheses:
+            assert type(h_m) is MappingHypothesis
+            h_m.updating_mapping(c, a, aa)
+
+    def update_rewards(self, c, sp, r):
+        for h_r in self.reward_hypotheses:
+            assert type(h_r) is RewardHypothesis
+            h_r.update(c, sp, r)
+
+    def update(self, experience_tuple):
+
+        # super(FlatAgent, self).update(experience_tuple)
+        _, a, aa, r, (loc_prime, c) = experience_tuple
+        self.updating_mapping(c, a, aa)
+        sp = self.task.state_location_key[loc_prime]
+        self.update_rewards(c, sp, r)
+
+        # then update the posterior of the rewards
+        belief = np.zeros(len(self.reward_hypotheses))
+        for ii, h_r in enumerate(self.reward_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            log_posterior = h_r.get_log_posterior()
+            belief[ii] = np.exp(log_posterior)
+
+        # normalize the posterior
+        belief /= np.sum(belief)
+
+        self.belief_rew = belief
+
+        # then update the posterior of the mappings
+        belief = np.zeros(len(self.mapping_hypotheses))
+        for ii, h_m in enumerate(self.mapping_hypotheses):
+            assert type(h_m) is MappingHypothesis
+            log_posterior = h_m.get_log_posterior()
+            belief[ii] = np.exp(log_posterior)
+
+        # normalize the posterior
+        belief /= np.sum(belief)
+
+        self.belief_map = belief
+
+    def select_abstract_action(self, state):
+        # use epsilon greedy choice function
+        if np.random.rand() > self.epsilon:
+            (x, y), c = state
+            s = self.task.state_location_key[(x, y)]
+
+            q_values = np.zeros(self.n_abstract_actions)
+            for ii, h_r in enumerate(self.reward_hypotheses):
+                # need the posterior (which is calculated during the update) and the pmf from the reward function
+                assert type(h_r) is RewardHypothesis
+                q_values += h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function) * \
+                            self.belief_rew[ii]
+
+            full_pmf = np.exp(q_values * self.inverse_temperature)
+            full_pmf = full_pmf / np.sum(full_pmf)
+
+            return sample_cmf(full_pmf.cumsum())
+        else:
+            return np.random.randint(self.n_abstract_actions)
+
+    def select_action(self, state):
+        # use epsilon greedy choice function
+        if np.random.rand() > self.epsilon:
+            _, c = state
+            aa = self.select_abstract_action(state)
+            c = np.int32(c)
+
+            # print "context:", c, "abstract action:", aa
+            mapping_mle = np.zeros(self.n_primitive_actions)
+            for ii, h_m in enumerate(self.mapping_hypotheses):
+                assert type(h_m) is MappingHypothesis
+
+                _mapping_mle = np.zeros(self.n_primitive_actions)
+                for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+                    # print h_m.get_mapping_probability(c, a0, aa)
+                    _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+
+                mapping_mle += _mapping_mle * self.belief_map[ii]
+
+            return sample_cmf(mapping_mle.cumsum())
+        else:
+            return np.random.randint(self.n_primitive_actions)
+
+    def get_abstract_q_values(self, state):
+
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
+        h_r = self.reward_hypotheses[np.argmax(self.belief_rew)]
+        _q_abstract = h_r.get_abstract_action_q_values(s, c, self.task.current_trial.transition_function)
+
+        return _q_abstract
+
+    def get_mapping(self, state):
+        _, c = state
+
+        h_m = self.mapping_hypotheses[np.argmax(self.belief_map)]
+        mapping_prob = np.zeros((self.task.n_primitive_actions, self.task.n_abstract_actions))
+        for a in range(self.task.n_primitive_actions):
+            for aa in range(self.task.n_abstract_actions):
+                mapping_prob[a, aa] = h_m.get_pr_a_given_aa(c, a, aa)
+
+        return mapping_prob
+
+    def set_reward_prior(self, list_locations):
+        """
+        This method allows the agent to specific grid coordinates as potential goal locations by
+        putting some prior (low confidence) reward density over the grid locations.
+
+        All other locations have low reward probability
+
+        :param list_locations: a list of (x, y) coordinates to consider as priors for the goal location search
+        :return: None
+        """
+        list_states = list()
+        for loc in list_locations:
+            list_states.append(self.task.state_location_key[loc])
+
+        for ii in range(len(self.reward_hypotheses)):
+            h_r = self.reward_hypotheses[ii]
+            h_r.set_reward_prior(list_states)
+
+    def get_goal_probability(self, context, goals):
+        """
+
+        :param context:
+        :param mapping: a relationship between primitives and abstract actions, dictionary
+        :param goals: a dictionary (?) of goal assignments? (goal # --> state #)
+        :return:
+        """
+
+        # loop through task sets to get posterior conditional on mapping
+        posterior = self.belief_rew.copy()
+
+        # loop through and get value function (ignore walls, distance, movement noise, etc)
+        n_goals = len(goals)
+        goal_probability = np.zeros(n_goals)
+        for ii, h_r in enumerate(self.reward_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            reward_visits = h_r.get_reward_visits(context)
+
+            # pull only the goal locations and normalize
+            reward_visits = [reward_visits[goals[g]] for g in range(n_goals)]
+            reward_visits /= np.sum(reward_visits)
+
+            # collect the goal probabilities
+            for g in range(n_goals):
+                goal_probability[g] += reward_visits[g] * posterior[ii]
+
+        return goal_probability
+
+    def evaluate_goal_guess_sequence_probability(self, subject_data, goal_key=None):
+
+        # make the goal key
+        if goal_key is None:
+            goal_key = {(0, 0): 0, (0, 2): 1, (2, 0): 2, (2, 2): 3}
+
+        goals = np.zeros(len(goal_key.values()), dtype=int)
+
+        for loc, g in goal_key.iteritems():
+            goals[g] = self.task.trials[0].state_location_key[loc]
+
+        new_trial = True
+        goal_pmf_list = list()
+        for exp in subject_data.experience:
+            (_, c), _, _, r, _ = exp
+            if new_trial:
+                goal_pmf_list.append(self.get_goal_probability(c, goals))
+            self.update(exp)
+            new_trial = r == 1
+
+        # get the goal guess sequence
+        goal_guess_sequence = get_goal_guess_sequence(subject_data)
+
+        # get the likelihood!
+        ll = 0
+        for ii, guess_sequence in enumerate(goal_guess_sequence):
+            goal_pmf = goal_pmf_list[ii]
+            for guess in guess_sequence:
+                ll += np.log(goal_pmf[guess])
+
+                # renormalize the guess sequence
+                goal_pmf[guess] = 0
+
+                goal_pmf /= np.sum(goal_pmf)
+
+        return -ll  # returns negative log likelihood
