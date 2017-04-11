@@ -4,7 +4,7 @@ import seaborn as sns
 from model import list_entropy, mutual_information
 
 sns.set_style('ticks')
-sns.set_palette ('Set2')
+sns.set_palette('Set2')
 
 
 class CRP(object):
@@ -134,6 +134,7 @@ def plot_evaluate(context_goals, max_goals=4):
     ax.set_xlabel('Alpha')
     ax.set_ylabel('Entropy (bits)')
     sns.despine()
+    return ax
 
 
 def plot_evaluate_joint(context_goals, context_maps, max_goals=4):
@@ -168,3 +169,5 @@ def plot_evaluate_joint(context_goals, context_maps, max_goals=4):
                loc='center left', bbox_to_anchor = (1.0, 0.5))
     _, ub = ax.get_ylim()
     ax.set_ylim([0, ub*1.1])
+    sns.despine()
+    return ax
