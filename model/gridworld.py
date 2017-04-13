@@ -105,7 +105,7 @@ class GridWorld(object):
 
         # make reward function
         self.reward_function = np.zeros((n_states, n_states), dtype=float)
-        self.reward_function[:, :] = -0.1
+        self.reward_function[:, :] = -0.05
         self.reward_function[:, self.state_location_key[goal]] = 1.0
 
         # store the action map
@@ -620,24 +620,21 @@ def randomize_order(context_balance, hazard_rates):
 
 def make_task(context_balance, context_goals, context_maps, hazard_rates, start_locations, grid_world_size,
               list_walls=None):
-    list_context = list()
+
+    # start locations are completely random
     list_start_locations = list()
-    list_goals = list()
-    list_maps = list()
     for ctx, n_reps in enumerate(context_balance):
-        list_context += [ctx] * n_reps
         list_start_locations += [start_locations[np.random.randint(len(start_locations))] for _ in range(n_reps)]
-        list_goals += [context_goals[ctx] for _ in range(n_reps)]
-        list_maps += [context_maps[ctx] for _ in range(n_reps)]
 
-    order = randomize_order(context_balance, hazard_rates)
+    # use randomization function to shuffle contexts
+    list_context = randomize_order(context_balance, hazard_rates)
 
-    list_start_locations = [list_start_locations[idx] for idx in order]
-    list_context = [list_context[idx] for idx in order]
-    list_goals = [list_goals[idx] for idx in order]
-    list_maps = [list_maps[idx] for idx in order]
+    # list of goals and list of mappings depend on the context order
+    list_goals = [context_goals[ctx] for ctx in list_context]
+    list_maps = [context_maps[ctx] for ctx in list_context]
+
     if list_walls is None:
-        list_walls = [[]] * len(order)
+        list_walls = [[]] * len(list_context)
 
     args = [list_start_locations, list_goals, list_context, list_maps]
     kwargs = dict(list_walls=list_walls, grid_world_size=grid_world_size)
