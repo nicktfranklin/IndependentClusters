@@ -63,10 +63,9 @@ This library run on Python 2.7 and unlike most python code, requries
  To compile the cython code, run:  
  ```python setup.py build_ext --inplace```  
   
-###Files:
+### Files:
 ---
-* `Demonstration.ipynb`: The jupyter notebooks shows a basic comparison in
- the performance of the models.
-* `Gridworld.py`: Defines the task environments
-* `agents.py`: Defines the reinforcement learning agents. Core functions 
+* `model.gridworld.py`: Defines the task environments
+* `model.agents.py`: Defines the reinforcement learning agents. Core functions 
     rely on cython
+* `model.crp.py`: Backend for Normative analysis
