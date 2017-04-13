@@ -34,7 +34,6 @@ This repository contains a simplified demonstration that parallels
  work in human behavior. The repository, and the documentation, are
  currently a work in progress.
 
----
 #### Notebooks:
 * A demonstration of the model's performance can be found in the 
 notebook file `Demonstration.ipynb`
