@@ -268,96 +268,8 @@ class FullInformationAgent(MultiStepAgent):
         return key_press
         # a = key_press_to_primitive[key_press]
 
-        # return a
 
-
-class FlatAgentKnownRewards(FullInformationAgent):
-    """ This Agent uses the known reward function (from the task) and estimates the mapping
-    """
-
-    def __init__(self, task, discount_rate=0.8, iteration_criterion=0.01, epsilon=0.025):
-
-        assert type(task) is Task
-        super(FullInformationAgent, self).__init__(task)
-
-        self.gamma = discount_rate
-        self.iteration_criterion = iteration_criterion
-        self.current_trial = 0
-        self.n_abstract_actions = self.task.n_abstract_actions
-        self.epsilon = epsilon
-
-        # mappings!
-        self.mapping_history = np.ones((self.task.n_ctx, self.task.n_primitive_actions, self.task.n_abstract_actions+1),
-                                        dtype=float) * 0.01
-        self.mapping_mle = np.ones((self.task.n_ctx, self.task.n_primitive_actions, self.task.n_abstract_actions),
-                                   dtype=float) * (1.0/self.task.n_primitive_actions)
-
-        self.abstract_action_counts = np.ones((self.task.n_ctx, self.task.n_abstract_actions+1), dtype=float) * 0.01 * \
-            self.task.n_primitive_actions
-
-    def update(self, experience_tuple):
-        self.updating_mapping(experience_tuple)
-
-    def updating_mapping(self, experience_tuple):
-        # print experience_tuple
-        (_, c), a, aa, r, _ = experience_tuple
-
-        self.mapping_history[c, a, aa] += 1.0
-        self.abstract_action_counts[c, aa] += 1.0
-
-        for aa0 in range(self.task.n_abstract_actions):
-            for a0 in range(self.task.n_primitive_actions):
-                self.mapping_mle[c, a0, aa0] = self.mapping_history[c, a0, aa0] / self.abstract_action_counts[c, aa0]
-
-    def _transitions_to_actions(self, s, sp):
-        x, y = self.task.inverse_state_loc_key[s]
-        xp, yp = self.task.inverse_state_loc_key[sp]
-        return displacement_to_abstract_action(xp - x, yp - y)
-
-    def select_abstract_action(self, state):
-        (x, y), c = state
-        # use epsilon greedy choice function
-        if np.random.rand() > self.epsilon:
-            pi = policy_iteration(self.task.current_trial.transition_function,
-                                  self.task.current_trial.reward_function[:, :],
-                                  gamma=self.gamma,
-                                  stop_criterion=self.iteration_criterion)
-
-            #
-            s = self.task.state_location_key[(x, y)]
-            abstract_action = pi[s]
-        else:
-            abstract_action = np.random.randint(self.n_abstract_actions)
-
-        return abstract_action
-
-    def select_action(self, state):
-        _, c = state
-
-        # use epsilon greedy choice function:
-        if np.random.rand() > self.epsilon:
-            abstract_action = self.select_abstract_action(state)
-
-            # use the mapping estimate to create a pmf over the primitives
-            pmf = self.mapping_mle[c, :, abstract_action]
-
-            # the mapping estimator is P(A|a), not P(a|A). This is a bit of a fudge, so normalize to create pmf
-            pmf /= pmf.sum()
-            cmf = pmf.cumsum()
-
-            pmf = self.mapping_mle[c, :, abstract_action]
-            for aa0 in range(self.task.n_abstract_actions):
-                if not aa0 == abstract_action:
-                    pmf *= (1 - self.mapping_mle[c, :, aa0])
-
-            pmf /= pmf.sum()
-
-            return sample_cmf(cmf)
-        else:
-            return np.random.randint(self.task.primitive_actions)
-
-
-class FlatAgent(FullInformationAgent):
+class ModelBasedAgent(FullInformationAgent):
     """ This Agent learns the reward function and mapping will model based planning
     """
 
@@ -472,49 +384,7 @@ class FlatAgent(FullInformationAgent):
                 self.reward_function[c, s] = self.reward_received[c, s] / self.reward_visits[c, s]
 
 
-class FlatAgentQValues(FlatAgent):
-    def get_abstract_q_values(self, state):
-        (x, y), c = state
-        s = self.task.state_location_key[(x, y)]
-
-        pi = policy_iteration(self.task.current_trial.transition_function,
-                              self.reward_function[c, :],
-                              gamma=self.gamma,
-                              stop_criterion=self.iteration_criterion)
-
-        v = policy_evaluation(pi,
-                              self.task.current_trial.transition_function,
-                              self.reward_function[c, :],
-                              gamma=self.gamma,
-                              stop_criterion=self.iteration_criterion)
-
-        # Use the belman equation to get q-values
-        q_abstract = np.zeros(self.task.n_abstract_actions, dtype=float)
-        for aa0 in range(self.task.n_abstract_actions):
-            for o0 in range(self.task.n_states):
-                q_abstract[aa0] += self.task.current_trial.transition_function[s, aa0, o0] * (
-                    self.reward_function[c, o0] + self.gamma*v[o0])
-
-        return q_abstract
-
-    def get_mapping(self, state):
-        return np.squeeze(self.mapping_mle[state[1], :, :])
-
-    def select_abstract_action(self, state):
-        q_abstract = self.get_abstract_q_values(state)
-        pmf = softmax_to_pdf(q_abstract, self.inverse_temperature) # doesn't work!!!
-        return sample_cmf(pmf.cumsum())
-
-    def get_optimal_policy(self, state):
-        _, c = state
-
-        q_abstract = self.get_abstract_q_values(state)
-        mapping = self.get_mapping(state)
-
-        return make_q_primitive(q_abstract, mapping)
-
-
-class JointClustering(FlatAgentQValues):
+class JointClustering(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0,  discount_rate=0.8, iteration_criterion=0.01,
                  mapping_prior=0.01, epsilon=0.025):
@@ -634,7 +504,7 @@ class JointClustering(FlatAgentQValues):
             return np.random.randint(self.n_primitive_actions)
 
 
-class IndependentClusterAgent(FlatAgentQValues):
+class IndependentClusterAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8, iteration_criterion=0.01,
                  mapping_prior=0.01, epsilon=0.025):
@@ -760,7 +630,7 @@ class IndependentClusterAgent(FlatAgentQValues):
             return np.random.randint(self.n_primitive_actions)
 
 
-class FlatControlAgent(FlatAgentQValues):
+class FlatControlAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0,  discount_rate=0.8, iteration_criterion=0.01,
                  mapping_prior=0.01, epsilon=0.025):
@@ -880,7 +750,7 @@ class FlatControlAgent(FlatAgentQValues):
             return np.random.randint(self.n_primitive_actions)
 
 
-class MapClusteringAgent(FlatAgentQValues):
+class MapClusteringAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8, iteration_criterion=0.01,
                  mapping_prior=0.01, epsilon=0.025):
