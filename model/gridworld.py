@@ -548,31 +548,6 @@ class RoomsProblem(object):
         return s, action, aa, r, sp
 
 
-def get_goal_guess_sequence(data_frame, goal_key=None):
-
-        if goal_key is None:
-            goal_key = {(0, 0): 0, (0, 2): 1, (2, 0): 2, (2, 2): 3}
-
-        locations_visited = set()
-
-        guess_sequence = list()
-        all_guess_sequence = list()
-        for _, p, a, r, (loc, c) in data_frame.experience:
-
-            # goal check (only use the first goals guessed for now)
-            if loc in goal_key.keys() and (loc not in locations_visited):
-                guess_sequence.append(goal_key[loc])
-
-            locations_visited.update([tuple(loc)])
-
-            if r == 1:
-                all_guess_sequence.append(guess_sequence)
-                guess_sequence = list()
-                locations_visited = set()
-
-        return all_guess_sequence
-
-
 def randomize_order(context_balance, hazard_rates):
     context_order = []
     context_presentations = copy.copy(context_balance)
