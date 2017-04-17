@@ -18,7 +18,6 @@ def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None)
         agent = agent_class(task, **agent_kwargs)
     else:
         agent = agent_class(task)
-    agent.set_reward_prior(task_kwargs['list_goal_priors'])
 
     results = agent.generate()
     results['Simulation Number'] = [simulation_number] * len(results)
