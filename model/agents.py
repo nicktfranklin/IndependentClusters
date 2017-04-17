@@ -3,7 +3,7 @@ import pandas as pd
 
 from gridworld import Task
 from cython_library import RewardHypothesis, MappingHypothesis
-from cython_library import policy_iteration, policy_evaluation
+from cython_library import policy_iteration
 
 """ these agents differ from the generative agents I typically use in that I need to pass a transition
 function (and possibly a reward function) to the agent for each trial. """
@@ -191,48 +191,6 @@ class FullInformationAgent(MultiStepAgent):
         self.iteration_criterion = iteration_criterion
         self.current_trial = 0
         self.n_abstract_actions = self.task.n_abstract_actions
-
-    def _transitions_to_actions(self, s, sp):
-        x, y = self.task.inverse_state_loc_key[s]
-        xp, yp = self.task.inverse_state_loc_key[sp]
-        return displacement_to_abstract_action(xp - x, yp - y)
-
-    def get_value_function(self, state):
-        ''' this particluar funcito ingornse thes state b/c it is full information
-        :param state:
-        :return:
-        '''
-
-        # run policy iteration on known reward and transition function
-        pi = policy_iteration(self.task.current_trial.transition_function,
-                              self.task.current_trial.reward_function[:, :],
-                              gamma=self.gamma,
-                              stop_criterion=self.iteration_criterion)
-
-        # use policy to get value function
-        v = policy_evaluation(pi,
-                              self.task.current_trial.transition_function,
-                              self.task.current_trial.reward_function[:, :],
-                              gamma=self.gamma,
-                              stop_criterion=self.iteration_criterion)
-
-        return v
-
-    def get_abstract_q_values(self, state):
-
-        ((x, y), c) = state
-        s = self.task.state_location_key[(x, y)]
-
-        value_function = self.get_value_function(state)
-        trial = self.task.current_trial
-
-        q_abstract = np.zeros(self.n_abstract_actions, dtype=float)
-        for aa0 in range(self.n_abstract_actions):
-            for o0 in range(self.task.n_states):
-                q_abstract[aa0] += trial.transition_function[s, aa0, o0] * (self.reward_function[c, s, o0] +
-                                                                            self.gamma * value_function[o0])
-
-        return q_abstract
 
     def select_abstract_action(self, state):
         (x, y), c = state

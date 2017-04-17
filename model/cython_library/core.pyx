@@ -74,41 +74,6 @@ cpdef np.ndarray[INT_DTYPE_t, ndim=1] policy_iteration(
 
     return np.array(pi)
 
-
-
-cpdef np.ndarray[DTYPE_t] policy_evaluation(
-        np.ndarray[INT_DTYPE_t, ndim=1] policy,
-        np.ndarray[DTYPE_t, ndim=3] transition_function,
-        np.ndarray[DTYPE_t, ndim=1] reward_function,
-        float gamma,
-        float stop_criterion):
-
-    cdef int [:] pi = policy
-    cdef double [:,:,::1] T = transition_function
-    cdef double [:] R = reward_function
-
-    cdef int n_s, sp, s
-    n_s = transition_function.shape[0]
-    cdef double [:] V = np.zeros(n_s, dtype=DTYPE)
-    cdef double v, V_temp
-
-    stop_criterion **= 2
-    while True:
-        delta = 0
-        for s in range(n_s):
-            v = V[s]
-
-            V_temp = 0
-            for sp in range(n_s):
-                V_temp += T[s, pi[s], sp] * (R[sp] + gamma*V[sp])
-            V[s] = V_temp
-
-            delta = fmax(delta, (v - V[s])**2)
-
-        if delta < stop_criterion:
-            return np.array(V)
-
-
 cpdef np.ndarray[DTYPE_t] value_iteration(
         np.ndarray[DTYPE_t, ndim=3] transition_function,
         np.ndarray[DTYPE_t, ndim=1] reward_function,
