@@ -107,6 +107,9 @@ class MultiStepAgent(object):
     def get_reward_function(self, state):
         pass
 
+    def cull_hypotheses(self, threshold=50.):
+        pass
+
     def generate(self):
         """ run through all of the trials of a task and output trial-by-trial data
         :return:
@@ -148,6 +151,7 @@ class MultiStepAgent(object):
 
             if step_counter[t] == 1:
                 times_seen_ctx[c] += 1
+                self.cull_hypotheses()
 
             # if step_counter[t] == 100:
             #     self.task.current_trial_number += 1
@@ -407,8 +411,19 @@ class JointClustering(ModelBasedAgent):
 
             self.log_belief[ii] = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
 
-    def cull_hypotheses(self, threshold=10.):
-        pass
+    def cull_hypotheses(self, threshold=50.):
+        new_log_belief = []
+        new_task_sets = []
+        max_belief = np.max(self.log_belief)
+
+        log_threshold = np.log(threshold)
+
+        for ii, log_b in enumerate(self.log_belief):
+            if max_belief - log_b < log_threshold:
+                new_log_belief.append(log_b)
+                new_task_sets.append(self.task_sets[ii])
+        self.log_belief = new_log_belief
+        self.task_sets = new_task_sets
 
     def select_abstract_action(self, state):
         (x, y), c = state
@@ -504,6 +519,32 @@ class IndependentClusterAgent(ModelBasedAgent):
         for ii, h_m in enumerate(self.mapping_hypotheses):
             assert type(h_m) is MappingHypothesis
             self.log_belief_map[ii] = h_m.get_log_posterior()
+
+    def cull_hypotheses(self, threshold=50.):
+        new_log_belief_rew = []
+        new_reward_hypotheses = []
+        max_belief = np.max(self.log_belief_rew)
+
+        log_threshold = np.log(threshold)
+
+        for ii, log_b in enumerate(self.log_belief_rew):
+            if max_belief - log_b < log_threshold:
+                new_log_belief_rew.append(log_b)
+                new_reward_hypotheses.append(self.reward_hypotheses[ii])
+
+        self.log_belief_rew = new_log_belief_rew
+        self.reward_hypotheses = new_reward_hypotheses
+
+        new_log_belief_map = []
+        new_mapping_hypotheses = []
+        max_belief = np.max(self.log_belief_map)
+        for ii, log_b in enumerate(self.log_belief_map):
+            if max_belief - log_b < log_threshold:
+                new_log_belief_map.append(log_b)
+                new_mapping_hypotheses.append(self.mapping_hypotheses[ii])
+
+        self.log_belief_map = new_log_belief_map
+        self.mapping_hypotheses = new_mapping_hypotheses
 
     def select_abstract_action(self, state):
         # use softmax greedy choice function
