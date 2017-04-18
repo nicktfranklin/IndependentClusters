@@ -27,31 +27,30 @@ def enumerate_assignments(max_context_number):
     :param max_context_number: int
     :return: list of lists, each a function that takes in a context id number and returns a cluster id number
     """
-    dict_assignments = [{0: 0}]  # context 0 is always in cluster 1
+    cluster_assignments = []  # context 0 is always in cluster 1
 
-    for contextNumber in range(1, max_context_number):
-        __inner_loop_dict_assignments = list()
-        for d in dict_assignments:
+    for contextNumber in range(0, max_context_number):
+        cluster_assignments = augment_assignments(cluster_assignments, contextNumber)
+
+    return cluster_assignments
+
+
+def augment_assignments(cluster_assignments, new_context):
+
+    if len(cluster_assignments) == 0:
+        _cluster_assignments = list()
+        _cluster_assignments.append({new_context: 0})
+    else:
+        _cluster_assignments = list()
+        for assignment in cluster_assignments:
             new_list = list()
-            for kk in range(0, max(d.values()) + 2):
-                d_copy = d.copy()
-                d_copy[contextNumber] = kk
-                new_list.append(d_copy)
+            for k in range(0, max(assignment.values()) + 2):
+                _assignment_copy = assignment.copy()
+                _assignment_copy[new_context] = k
+                new_list.append(_assignment_copy)
+            _cluster_assignments += new_list
 
-            __inner_loop_dict_assignments += new_list
-
-        dict_assignments = __inner_loop_dict_assignments
-    return dict_assignments
-    # # turn the assignments from a dictionary of {context: cluster} to arrays where the array if a function
-    # # f(context) = cluster
-    # assignments = [None] * len(dict_assignments)
-    # for ii, d in enumerate(dict_assignments):
-    #     cluster_assignment_function = np.zeros(max_context_number, dtype=np.int32)
-    #     for ctx_id, cluster_id in d.iteritems():
-    #         cluster_assignment_function[ctx_id] = cluster_id
-    #     assignments[ii] = cluster_assignment_function
-    #
-    # return assignments
+    return _cluster_assignments
 
 
 def softmax_to_pdf(q_values, inverse_temperature):
