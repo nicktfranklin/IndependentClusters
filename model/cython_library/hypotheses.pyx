@@ -17,12 +17,6 @@ cdef extern from "math.h":
     double log(double x)
 
 
-cdef extern from "math.h":
-    double exp(double x)
-
-cdef extern from "math.h":
-    double fmin(double a, double b)
-
 
 cdef class MappingCluster(object):
     cdef double [:,::1] mapping_history, mapping_mle, pr_aa_given_a
@@ -121,7 +115,7 @@ cdef class MappingHypothesis(object):
             # need to store all experiences for log probability calculations
             self.experience.append((k, a, aa))
 
-        cdef double _get_log_likelihood(self):
+        def get_log_likelihood(self):
             cdef double log_likelihood = 0
             cdef int t, k, a, aa
             cdef MappingCluster cluster
@@ -132,10 +126,6 @@ cdef class MappingHypothesis(object):
                 log_likelihood += log(cluster.get_likelihood(a, aa))
 
             return log_likelihood
-
-        def get_log_likelihood(self):
-            return self._get_log_likelihood()
-
 
         def get_log_posterior(self):
             return self.prior_log_prob + self.get_log_likelihood()
@@ -230,7 +220,7 @@ cdef class RewardHypothesis(object):
         self.clusters[k] = cluster
         self.experience.append((k, sp, r))
 
-    cdef double _get_log_likelihood(self):
+    cpdef double get_log_likelihood(self):
         cdef double log_likelihood = 0
         cdef int k, sp, r
         cdef RewardCluster cluster
@@ -238,9 +228,6 @@ cdef class RewardHypothesis(object):
             cluster = self.clusters[k]
             log_likelihood += log(cluster.get_observation_probability(sp, r))
         return log_likelihood
-
-    def get_log_likelihood(self):
-        return self._get_log_likelihood()
 
     def get_log_posterior(self):
         return self.get_log_likelihood() + self.log_prior
@@ -251,12 +238,12 @@ cdef class RewardHypothesis(object):
     cpdef np.ndarray[DTYPE_t, ndim=1] get_abstract_action_q_values(self, int s, int c, double[:,:,::1] transition_function):
         cdef int k = self.cluster_assignments[c]
         cdef RewardCluster cluster = self.clusters[k]
-        cdef double [:] reward_function = cluster.get_reward_function()
+        cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.asarray(cluster.get_reward_function())
 
         cdef double [:] v
         v = value_iteration(
             np.asarray(transition_function),
-            np.asarray(reward_function),
+            reward_function,
             gamma=self.gamma,
             stop_criterion=self.iteration_criterion
         )
@@ -277,9 +264,9 @@ cdef class RewardHypothesis(object):
 
         # we need q-values to properly consider multiple options of equivalent optimality, but we can just always
         # pass a very high value for the temperature
-        # cdef np.ndarray[DTYPE_t, ndim=1] pmf = np.exp(q_values * float(self.inverse_temperature))
-        # pmf = pmf / np.sum(pmf)
-        cdef np.ndarray[DTYPE_t, ndim=1] pmf = softmax_normalize(q_values, self.inverse_temperature)
+        cdef np.ndarray[DTYPE_t, ndim=1] pmf = np.exp(np.array(q_values) * float(self.inverse_temperature))
+        pmf = pmf / np.sum(pmf)
+
         return pmf
 
     def get_reward_function(self, int c):
@@ -288,7 +275,7 @@ cdef class RewardHypothesis(object):
         cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.asarray(cluster.get_reward_function())
 
         return reward_function
-    
+
     def get_reward_visits(self, int c):
         cdef int k = self.cluster_assignments[c]
         cdef RewardCluster cluster = self.clusters[k]
@@ -303,23 +290,3 @@ cdef class RewardHypothesis(object):
         for k in range(len(self.clusters)):
             cluster = self.clusters[k]
             cluster.set_prior(list_goals)
-
-cdef np.ndarray[DTYPE_t, ndim=1] softmax_normalize(np.ndarray[DTYPE_t, ndim=1] vector, inverse_temperature):
-    cdef double p0, norm_k, min_p
-    cdef int ii
-    cdef int n = len(vector)
-    min_p = 0
-    cdef np.ndarray[DTYPE_t, ndim=1] p = np.zeros(n, dtype=DTYPE)
-    for ii in range(n):
-        p0 = exp(vector[ii])
-        min_p = fmin(p0, min_p)
-        norm_k += p0
-        p[ii] = p0
-
-    norm_k -= min_p
-
-    for ii in range(n):
-        p[ii] /= norm_k
-
-    return p
-
