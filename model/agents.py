@@ -417,17 +417,13 @@ class JointClustering(ModelBasedAgent):
         self.belief = belief
 
     def select_abstract_action(self, state):
-        # use epsilon greedy choice function:
         if np.random.rand() > self.epsilon:
             (x, y), c = state
             s = self.task.state_location_key[(x, y)]
 
-            q_values = np.zeros(self.n_abstract_actions)
-            for ii, ts in enumerate(self.task_sets):
-                # need the posterior (which is calculated during the update) and the pmf from the reward function
-                h_r = ts['Reward Hypothesis']
-
-                q_values += h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function) * self.belief[ii]
+            ii = np.argmax(self.belief)
+            h_r = self.task_sets[ii]['Reward Hypothesis']
+            q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
             full_pmf = np.exp(q_values * self.inverse_temperature)
             full_pmf = full_pmf / np.sum(full_pmf)
@@ -443,18 +439,12 @@ class JointClustering(ModelBasedAgent):
             aa = self.select_abstract_action(state)
             c = np.int32(c)
 
-            # print "context:", c, "abstract action:", aa
+            ii = np.argmax(self.belief)
+            h_m = self.task_sets[ii]['Mapping Hypothesis']
+
             mapping_mle = np.zeros(self.n_primitive_actions)
-            for ii, ts in enumerate(self.task_sets):
-                h_m = ts['Mapping Hypothesis']
-
-                _mapping_mle = np.zeros(self.n_primitive_actions)
-                for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                    # print h_m.get_mapping_probability(c, a0, aa)
-                    _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
-
-                # print ii, self.belief[ii], _mapping_mle
-                mapping_mle += _mapping_mle * self.belief[ii]
+            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
             return sample_cmf(mapping_mle.cumsum())
         else:
@@ -513,7 +503,6 @@ class IndependentClusterAgent(ModelBasedAgent):
 
     def update(self, experience_tuple):
 
-        # super(FlatAgent, self).update(experience_tuple)
         _, a, aa, r, (loc_prime, c) = experience_tuple
         self.updating_mapping(c, a, aa)
         sp = self.task.state_location_key[loc_prime]
@@ -570,17 +559,12 @@ class IndependentClusterAgent(ModelBasedAgent):
             aa = self.select_abstract_action(state)
             c = np.int32(c)
 
-            # print "context:", c, "abstract action:", aa
+            ii = np.argmax(self.belief_map)
+            h_m = self.mapping_hypotheses[ii]
+
             mapping_mle = np.zeros(self.n_primitive_actions)
-            for ii, h_m in enumerate(self.mapping_hypotheses):
-                assert type(h_m) is MappingHypothesis
-
-                _mapping_mle = np.zeros(self.n_primitive_actions)
-                for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                    # print h_m.get_mapping_probability(c, a0, aa)
-                    _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
-
-                mapping_mle += _mapping_mle * self.belief_map[ii]
+            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
             return sample_cmf(mapping_mle.cumsum())
         else:
@@ -663,17 +647,13 @@ class FlatControlAgent(ModelBasedAgent):
         self.belief = belief
 
     def select_abstract_action(self, state):
-        # use epsilon greedy choice function:
         if np.random.rand() > self.epsilon:
             (x, y), c = state
             s = self.task.state_location_key[(x, y)]
 
-            q_values = np.zeros(self.n_abstract_actions)
-            for ii, ts in enumerate(self.task_sets):
-                # need the posterior (which is calculated during the update) and the pmf from the reward function
-                h_r = ts['Reward Hypothesis']
-
-                q_values += h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function) * self.belief[ii]
+            ii = np.argmax(self.belief)
+            h_r = self.task_sets[ii]['Reward Hypothesis']
+            q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
             full_pmf = np.exp(q_values * self.inverse_temperature)
             full_pmf = full_pmf / np.sum(full_pmf)
@@ -690,17 +670,12 @@ class FlatControlAgent(ModelBasedAgent):
             c = np.int32(c)
 
             # print "context:", c, "abstract action:", aa
+            ii = np.argmax(self.belief)
+            h_m = self.task_sets[ii]['Mapping Hypothesis']
+
             mapping_mle = np.zeros(self.n_primitive_actions)
-            for ii, ts in enumerate(self.task_sets):
-                h_m = ts['Mapping Hypothesis']
-
-                _mapping_mle = np.zeros(self.n_primitive_actions)
-                for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                    # print h_m.get_mapping_probability(c, a0, aa)
-                    _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
-
-                # print ii, self.belief[ii], _mapping_mle
-                mapping_mle += _mapping_mle * self.belief[ii]
+            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
             return sample_cmf(mapping_mle.cumsum())
         else:
@@ -817,17 +792,12 @@ class MapClusteringAgent(ModelBasedAgent):
             aa = self.select_abstract_action(state)
             c = np.int32(c)
 
-            # print "context:", c, "abstract action:", aa
+            ii = np.argmax(self.belief_map)
+            h_m = self.mapping_hypotheses[ii]
+
             mapping_mle = np.zeros(self.n_primitive_actions)
-            for ii, h_m in enumerate(self.mapping_hypotheses):
-                assert type(h_m) is MappingHypothesis
-
-                _mapping_mle = np.zeros(self.n_primitive_actions)
-                for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                    # print h_m.get_mapping_probability(c, a0, aa)
-                    _mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
-
-                mapping_mle += _mapping_mle * self.belief_map[ii]
+            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
             return sample_cmf(mapping_mle.cumsum())
         else:
