@@ -375,7 +375,7 @@ class JointClustering(ModelBasedAgent):
                 ),
             })
 
-        self.belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
+        self.log_belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
 
     def updating_mapping(self, c, a, aa):
         for ts in self.task_sets:
@@ -398,7 +398,6 @@ class JointClustering(ModelBasedAgent):
         self.update_rewards(c, sp, r)
 
         # then update the posterior
-        belief = np.zeros(len(self.task_sets))
         for ii, ts in enumerate(self.task_sets):
             h_m = ts['Mapping Hypothesis']
             h_r = ts['Reward Hypothesis']
@@ -406,19 +405,16 @@ class JointClustering(ModelBasedAgent):
             assert type(h_m) is MappingHypothesis
             assert type(h_r) is RewardHypothesis
 
-            log_posterior = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
-            belief[ii] = np.exp(log_posterior)
+            self.log_belief[ii] = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
 
-        # normalize the posterior
-        belief /= np.sum(belief)
-
-        self.belief = belief
+    def cull_hypotheses(self, threshold=10.):
+        pass
 
     def select_abstract_action(self, state):
         (x, y), c = state
         s = self.task.state_location_key[(x, y)]
 
-        ii = np.argmax(self.belief)
+        ii = np.argmax(self.log_belief)
         h_r = self.task_sets[ii]['Reward Hypothesis']
         q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
@@ -433,7 +429,7 @@ class JointClustering(ModelBasedAgent):
         aa = self.select_abstract_action(state)
         c = np.int32(c)
 
-        ii = np.argmax(self.belief)
+        ii = np.argmax(self.log_belief)
         h_m = self.task_sets[ii]['Mapping Hypothesis']
 
         mapping_mle = np.zeros(self.n_primitive_actions)
@@ -479,8 +475,8 @@ class IndependentClusterAgent(ModelBasedAgent):
                 ),
             )
 
-        self.belief_rew = np.ones(len(self.reward_hypotheses)) / float(len(self.reward_hypotheses))
-        self.belief_map = np.ones(len(self.mapping_hypotheses)) / float(len(self.mapping_hypotheses))
+        self.log_belief_rew = np.ones(len(self.reward_hypotheses)) / float(len(self.reward_hypotheses))
+        self.log_belief_map = np.ones(len(self.mapping_hypotheses)) / float(len(self.mapping_hypotheses))
 
     def updating_mapping(self, c, a, aa):
         for h_m in self.mapping_hypotheses:
@@ -500,40 +496,24 @@ class IndependentClusterAgent(ModelBasedAgent):
         self.update_rewards(c, sp, r)
 
         # then update the posterior of the rewards
-        belief = np.zeros(len(self.reward_hypotheses))
         for ii, h_r in enumerate(self.reward_hypotheses):
             assert type(h_r) is RewardHypothesis
-            log_posterior = h_r.get_log_posterior()
-            belief[ii] = np.exp(log_posterior)
-
-        # normalize the posterior
-        belief /= np.sum(belief)
-
-        self.belief_rew = belief
+            self.log_belief_rew[ii] = h_r.get_log_posterior()
 
         # then update the posterior of the mappings
-        belief = np.zeros(len(self.mapping_hypotheses))
         for ii, h_m in enumerate(self.mapping_hypotheses):
             assert type(h_m) is MappingHypothesis
-            log_posterior = h_m.get_log_posterior()
-            belief[ii] = np.exp(log_posterior)
-
-        # normalize the posterior
-        belief /= np.sum(belief)
-
-        self.belief_map = belief
+            self.log_belief_map[ii] = h_m.get_log_posterior()
 
     def select_abstract_action(self, state):
         # use softmax greedy choice function
         (x, y), c = state
         s = self.task.state_location_key[(x, y)]
 
-        q_values = np.zeros(self.n_abstract_actions)
-        for ii, h_r in enumerate(self.reward_hypotheses):
-            # need the posterior (which is calculated during the update) and the pmf from the reward function
-            assert type(h_r) is RewardHypothesis
-            q_values += h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function) * \
-                        self.belief_rew[ii]
+        ii = np.argmax(self.log_belief_rew)
+        h_r = self.reward_hypotheses[ii]
+
+        q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
         full_pmf = np.exp(q_values * self.inverse_temperature)
         full_pmf = full_pmf / np.sum(full_pmf)
@@ -546,7 +526,7 @@ class IndependentClusterAgent(ModelBasedAgent):
         aa = self.select_abstract_action(state)
         c = np.int32(c)
 
-        ii = np.argmax(self.belief_map)
+        ii = np.argmax(self.log_belief_map)
         h_m = self.mapping_hypotheses[ii]
 
         mapping_mle = np.zeros(self.n_primitive_actions)
@@ -591,7 +571,7 @@ class FlatControlAgent(ModelBasedAgent):
                 ),
             })
 
-        self.belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
+        self.log_belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
 
     def updating_mapping(self, c, a, aa):
         for ts in self.task_sets:
@@ -614,7 +594,6 @@ class FlatControlAgent(ModelBasedAgent):
         self.update_rewards(c, sp, r)
 
         # then update the posterior
-        belief = np.zeros(len(self.task_sets))
         for ii, ts in enumerate(self.task_sets):
             h_m = ts['Mapping Hypothesis']
             h_r = ts['Reward Hypothesis']
@@ -622,19 +601,13 @@ class FlatControlAgent(ModelBasedAgent):
             assert type(h_m) is MappingHypothesis
             assert type(h_r) is RewardHypothesis
 
-            log_posterior = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
-            belief[ii] = np.exp(log_posterior)
-
-        # normalize the posterior
-        belief /= np.sum(belief)
-
-        self.belief = belief
+            self.log_belief[ii] = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
 
     def select_abstract_action(self, state):
         (x, y), c = state
         s = self.task.state_location_key[(x, y)]
 
-        ii = np.argmax(self.belief)
+        ii = np.argmax(self.log_belief)
         h_r = self.task_sets[ii]['Reward Hypothesis']
         q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
@@ -651,7 +624,7 @@ class FlatControlAgent(ModelBasedAgent):
         c = np.int32(c)
 
         # print "context:", c, "abstract action:", aa
-        ii = np.argmax(self.belief)
+        ii = np.argmax(self.log_belief)
         h_m = self.task_sets[ii]['Mapping Hypothesis']
 
         mapping_mle = np.zeros(self.n_primitive_actions)
