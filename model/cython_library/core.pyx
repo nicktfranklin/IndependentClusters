@@ -1,5 +1,3 @@
-# cython: profile=True
-# cython: linetrace=True
 from __future__ import division
 import numpy as np
 cimport numpy as np
