@@ -230,7 +230,7 @@ class ModelBasedAgent(FullInformationAgent):
     """ This Agent learns the reward function and mapping will model based planning
     """
 
-    def __init__(self, task, discount_rate=0.8, iteration_criterion=0.01, mapping_prior=0.01, epsilon=0.025):
+    def __init__(self, task, discount_rate=0.8, iteration_criterion=0.01, mapping_prior=0.01):
 
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
@@ -240,7 +240,6 @@ class ModelBasedAgent(FullInformationAgent):
         self.current_trial = 0
         self.n_abstract_actions = self.task.n_abstract_actions
         self.n_primitive_actions = self.task.n_primitive_actions
-        self.epsilon = epsilon
 
         # mappings!
         self.mapping_history = np.ones((self.task.n_ctx, self.task.n_primitive_actions, self.task.n_abstract_actions+1),
@@ -344,7 +343,7 @@ class ModelBasedAgent(FullInformationAgent):
 class JointClustering(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0,  discount_rate=0.8, iteration_criterion=0.01,
-                 mapping_prior=0.01, epsilon=0.025):
+                 mapping_prior=0.01):
 
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
@@ -358,7 +357,6 @@ class JointClustering(ModelBasedAgent):
         self.current_trial = 0
         self.n_abstract_actions = self.task.n_abstract_actions
         self.n_primitive_actions = self.task.n_primitive_actions
-        self.epsilon = epsilon
 
         # get the list of enumerated set assignments!
         set_assignments = enumerate_assignments(self.task.n_ctx)
@@ -417,44 +415,38 @@ class JointClustering(ModelBasedAgent):
         self.belief = belief
 
     def select_abstract_action(self, state):
-        if np.random.rand() > self.epsilon:
-            (x, y), c = state
-            s = self.task.state_location_key[(x, y)]
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
 
-            ii = np.argmax(self.belief)
-            h_r = self.task_sets[ii]['Reward Hypothesis']
-            q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
+        ii = np.argmax(self.belief)
+        h_r = self.task_sets[ii]['Reward Hypothesis']
+        q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
-            full_pmf = np.exp(q_values * self.inverse_temperature)
-            full_pmf = full_pmf / np.sum(full_pmf)
+        full_pmf = np.exp(q_values * self.inverse_temperature)
+        full_pmf = full_pmf / np.sum(full_pmf)
 
-            return sample_cmf(full_pmf.cumsum())
-        else:
-            return np.random.randint(self.n_abstract_actions)
+        return sample_cmf(full_pmf.cumsum())
 
     def select_action(self, state):
-        # use epsilon greedy choice function
-        if np.random.rand() > self.epsilon:
-            _, c = state
-            aa = self.select_abstract_action(state)
-            c = np.int32(c)
+        # use softmax choice function
+        _, c = state
+        aa = self.select_abstract_action(state)
+        c = np.int32(c)
 
-            ii = np.argmax(self.belief)
-            h_m = self.task_sets[ii]['Mapping Hypothesis']
+        ii = np.argmax(self.belief)
+        h_m = self.task_sets[ii]['Mapping Hypothesis']
 
-            mapping_mle = np.zeros(self.n_primitive_actions)
-            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+        mapping_mle = np.zeros(self.n_primitive_actions)
+        for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+            mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
-            return sample_cmf(mapping_mle.cumsum())
-        else:
-            return np.random.randint(self.n_primitive_actions)
+        return sample_cmf(mapping_mle.cumsum())
 
 
 class IndependentClusterAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8, iteration_criterion=0.01,
-                 mapping_prior=0.01, epsilon=0.025):
+                 mapping_prior=0.01):
 
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
@@ -465,7 +457,6 @@ class IndependentClusterAgent(ModelBasedAgent):
         self.current_trial = 0
         self.n_abstract_actions = self.task.n_abstract_actions
         self.n_primitive_actions = self.task.n_primitive_actions
-        self.epsilon = epsilon
 
         # get the list of enumerated set assignments!
         set_assignments = enumerate_assignments(self.task.n_ctx)
@@ -533,48 +524,42 @@ class IndependentClusterAgent(ModelBasedAgent):
         self.belief_map = belief
 
     def select_abstract_action(self, state):
-        # use epsilon greedy choice function
-        if np.random.rand() > self.epsilon:
-            (x, y), c = state
-            s = self.task.state_location_key[(x, y)]
+        # use softmax greedy choice function
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
 
-            q_values = np.zeros(self.n_abstract_actions)
-            for ii, h_r in enumerate(self.reward_hypotheses):
-                # need the posterior (which is calculated during the update) and the pmf from the reward function
-                assert type(h_r) is RewardHypothesis
-                q_values += h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function) * \
-                            self.belief_rew[ii]
+        q_values = np.zeros(self.n_abstract_actions)
+        for ii, h_r in enumerate(self.reward_hypotheses):
+            # need the posterior (which is calculated during the update) and the pmf from the reward function
+            assert type(h_r) is RewardHypothesis
+            q_values += h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function) * \
+                        self.belief_rew[ii]
 
-            full_pmf = np.exp(q_values * self.inverse_temperature)
-            full_pmf = full_pmf / np.sum(full_pmf)
+        full_pmf = np.exp(q_values * self.inverse_temperature)
+        full_pmf = full_pmf / np.sum(full_pmf)
 
-            return sample_cmf(full_pmf.cumsum())
-        else:
-            return np.random.randint(self.n_abstract_actions)
+        return sample_cmf(full_pmf.cumsum())
 
     def select_action(self, state):
-        # use epsilon greedy choice function
-        if np.random.rand() > self.epsilon:
-            _, c = state
-            aa = self.select_abstract_action(state)
-            c = np.int32(c)
+        # use softmax greedy choice function
+        _, c = state
+        aa = self.select_abstract_action(state)
+        c = np.int32(c)
 
-            ii = np.argmax(self.belief_map)
-            h_m = self.mapping_hypotheses[ii]
+        ii = np.argmax(self.belief_map)
+        h_m = self.mapping_hypotheses[ii]
 
-            mapping_mle = np.zeros(self.n_primitive_actions)
-            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+        mapping_mle = np.zeros(self.n_primitive_actions)
+        for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+            mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
-            return sample_cmf(mapping_mle.cumsum())
-        else:
-            return np.random.randint(self.n_primitive_actions)
+        return sample_cmf(mapping_mle.cumsum())
 
 
 class FlatControlAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0,  discount_rate=0.8, iteration_criterion=0.01,
-                 mapping_prior=0.01, epsilon=0.025):
+                 mapping_prior=0.01):
 
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
@@ -588,7 +573,6 @@ class FlatControlAgent(ModelBasedAgent):
         self.current_trial = 0
         self.n_abstract_actions = self.task.n_abstract_actions
         self.n_primitive_actions = self.task.n_primitive_actions
-        self.epsilon = epsilon
 
         # get the list of enumerated set assignments!
         set_assignments = [{ii: ii for ii in range(task.n_ctx)}]
@@ -647,39 +631,34 @@ class FlatControlAgent(ModelBasedAgent):
         self.belief = belief
 
     def select_abstract_action(self, state):
-        if np.random.rand() > self.epsilon:
-            (x, y), c = state
-            s = self.task.state_location_key[(x, y)]
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
 
-            ii = np.argmax(self.belief)
-            h_r = self.task_sets[ii]['Reward Hypothesis']
-            q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
+        ii = np.argmax(self.belief)
+        h_r = self.task_sets[ii]['Reward Hypothesis']
+        q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
-            full_pmf = np.exp(q_values * self.inverse_temperature)
-            full_pmf = full_pmf / np.sum(full_pmf)
+        full_pmf = np.exp(q_values * self.inverse_temperature)
+        full_pmf = full_pmf / np.sum(full_pmf)
 
-            return sample_cmf(full_pmf.cumsum())
-        else:
-            return np.random.randint(self.n_abstract_actions)
+        return sample_cmf(full_pmf.cumsum())
+
 
     def select_action(self, state):
-        # use epsilon greedy choice function
-        if np.random.rand() > self.epsilon:
-            _, c = state
-            aa = self.select_abstract_action(state)
-            c = np.int32(c)
 
-            # print "context:", c, "abstract action:", aa
-            ii = np.argmax(self.belief)
-            h_m = self.task_sets[ii]['Mapping Hypothesis']
+        _, c = state
+        aa = self.select_abstract_action(state)
+        c = np.int32(c)
 
-            mapping_mle = np.zeros(self.n_primitive_actions)
-            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
-                mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+        # print "context:", c, "abstract action:", aa
+        ii = np.argmax(self.belief)
+        h_m = self.task_sets[ii]['Mapping Hypothesis']
 
-            return sample_cmf(mapping_mle.cumsum())
-        else:
-            return np.random.randint(self.n_primitive_actions)
+        mapping_mle = np.zeros(self.n_primitive_actions)
+        for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+            mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+
+        return sample_cmf(mapping_mle.cumsum())
 
 
 class MapClusteringAgent(ModelBasedAgent):

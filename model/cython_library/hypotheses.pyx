@@ -144,9 +144,9 @@ cdef class RewardCluster(object):
 
     def __init__(self, int n_stim):
         # rewards!
-        self.reward_visits = np.ones(n_stim) * 0.01001
-        self.reward_received = np.ones(n_stim) * 0.01
-        self.reward_function = np.ones(n_stim) * (0.01/0.01001)
+        self.reward_visits = np.ones(n_stim) * 0.1
+        self.reward_received = np.ones(n_stim) * 0.1
+        self.reward_function = np.ones(n_stim) * 1.0
 
         # need a separate tracker for the probability a reward was received
         self.reward_received_bool = np.ones(n_stim) * 1e-5

@@ -110,7 +110,7 @@ class GridWorld(object):
 
         # make reward function
         self.reward_function = np.zeros((n_states, n_states), dtype=float)
-        self.reward_function[:, :] = -0.05
+        self.reward_function[:, :] = -0.5
         self.reward_function[:, self.state_location_key[goal]] = 1.0
 
         # store the action map
