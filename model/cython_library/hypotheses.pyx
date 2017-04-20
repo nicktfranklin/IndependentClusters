@@ -22,6 +22,7 @@ cdef class MappingCluster(object):
     cdef double [:,::1] mapping_history, mapping_mle, pr_aa_given_a
     cdef double [:] abstract_action_counts, primitive_action_counts
     cdef int n_primitive_actions, n_abstract_actions
+    cdef double mapping_prior
 
     def __init__(self, int n_primitive_actions, int n_abstract_actions, float mapping_prior):
 
@@ -45,6 +46,7 @@ cdef class MappingCluster(object):
 
         self.n_primitive_actions = n_primitive_actions
         self.n_abstract_actions = n_abstract_actions
+        self.mapping_prior = mapping_prior
 
     def update(self, int a, int aa):
         cdef int aa0, a0
@@ -64,6 +66,25 @@ cdef class MappingCluster(object):
 
     def get_likelihood(self, int a, int aa):
         return self.pr_aa_given_a[a, aa]
+
+    def deep_copy(self):
+        cdef int a, aa, idx
+
+        cdef MappingCluster _cluster_copy = MappingCluster(self.n_primitive_actions, self.n_abstract_actions,
+                                                           self.mapping_prior)
+
+        for a in range(self.n_primitive_actions):
+            self.primitive_action_counts[a] = self.primitive_action_counts[a]
+
+            for aa in range(self.n_abstract_actions + 1): # include the possibility of the "wait" action
+                self.mapping_history[a, aa] = self.mapping_history[a, aa]
+                self.mapping_mle[a, aa] = self.mapping_mle[a, aa]
+                self.pr_aa_given_a[a, aa] = self.pr_aa_given_a[a, aa]
+
+        for aa in range(self.n_abstract_actions + 1): # include the possibility of the "wait" action
+            self.abstract_action_counts[aa] = self.abstract_action_counts[aa]
+
+        return _cluster_copy
 
 cdef class MappingHypothesis(object):
 
@@ -98,13 +119,28 @@ cdef class MappingHypothesis(object):
         cdef _get_cluster_average(self):
             pass
 
-        cdef update_assignment(self, int c, int k):
-            # if we are assigning a context to a previous cluster, it's pretty simple,
-            # otherwise we need a new set of statistics
-            if k in self.cluster_assignments.values():
-                self.clusters[k] = MappingCluster(self.n_primitive_actions, self.n_abstract_actions, self.mapping_prior)
-            self.cluster_assignments[c] = k
+        def deep_copy(self):
+            cdef MappingHypothesis _h_copy = MappingHypothesis(self.n_primitive_actions, self.n_abstract_actions,
+                                                               {0: 0}, self.alpha, self.mapping_prior)
 
+            cdef int k, a, aa, c
+            cdef MappingCluster cluster
+
+            # deep copy each list, dictionary, cluster, etc
+            _h_copy.cluster_assignments = {c: k for c, k in self.cluster_assignments.iteritems()}
+            _h_copy.clusters = {k: cluster.deep_copy() for k, cluster in self.clusters.iteritems()}
+            _h_copy.experience = [(k, a, aa) for k, a, aa in self.experience]
+            _h_copy.prior_log_prob = get_prior_log_probability(_h_copy.cluster_assignments, _h_copy.alpha)
+            return _h_copy
+
+        def add_new_context_assignment(self, int context, int cluster):
+            # check if new cluster
+            if cluster in self.cluster_assignments.values():
+                self.clusters[cluster] = MappingCluster(self.n_primitive_actions, self.n_abstract_actions,
+                                                       self.mapping_prior)
+
+            self.cluster_assignments[context] = cluster  # note, there's no check built in here
+            self.prior_log_prob = get_prior_log_probability(self.cluster_assignments, self.alpha)
 
         def updating_mapping(self, int c, int a, int aa):
             cdef int k = self.cluster_assignments[c]
@@ -186,9 +222,27 @@ cdef class RewardCluster(object):
         for s in range(n_stim):
             self.reward_function[s] = self.reward_received[s] / self.reward_visits[s]
 
+    def deep_copy(self):
+        cdef int s, idx, n_stim
+
+        n_stim = len(self.reward_visits)
+        cdef RewardCluster _cluster_copy = RewardCluster(n_stim)
+
+        for s in range(n_stim):
+            _cluster_copy.reward_visits[s] = self.reward_visits[s]
+            _cluster_copy.reward_received[s] = self.reward_received[s]
+            _cluster_copy.reward_function[s] = self.reward_function[s]
+
+            _cluster_copy.reward_received_bool[s] = self.reward_received_bool[s]
+
+            for idx in range(2):
+                _cluster_copy.reward_probability[s, idx] = self.reward_probability[s, idx]
+
+        return _cluster_copy
+
 
 cdef class RewardHypothesis(object):
-    cdef double gamma, iteration_criterion, log_prior, inverse_temperature
+    cdef double gamma, iteration_criterion, log_prior, inverse_temperature, alpha
     cdef int n_stim
     cdef dict cluster_assignments, clusters
     cdef double [:,::1] reward_visits, reward_received, reward_function, reward_received_bool
@@ -203,6 +257,7 @@ cdef class RewardHypothesis(object):
         self.gamma = gamma
         self.iteration_criterion = stop_criterion
         self.cluster_assignments = cluster_assignments
+        self.alpha = alpha
 
         cdef int n_k = len(set(cluster_assignments))
 
@@ -219,6 +274,28 @@ cdef class RewardHypothesis(object):
         cluster.update(sp, r)
         self.clusters[k] = cluster
         self.experience.append((k, sp, r))
+
+    def deep_copy(self):
+        cdef RewardHypothesis _h_copy = RewardHypothesis(self.n_stim, self.inverse_temperature, self.gamma,
+                                                         self.iteration_criterion, {0: 0}, self.alpha)
+
+        # deep copy each list, dictionary, cluster, etc.
+        cdef int c, k, sp, r
+        cdef RewardCluster cluster
+        _h_copy.cluster_assignments = {c: k for c, k in self.cluster_assignments.iteritems()}
+        _h_copy.clusters = {k: cluster.deep_copy() for k, cluster in self.clusters.iteritems()}
+        _h_copy.experience = [(k, sp, r) for k, sp, r in self.experience]
+        _h_copy.log_prior = get_prior_log_probability(_h_copy.cluster_assignments, _h_copy.alpha)
+
+        return _h_copy
+
+    def add_new_context_assignment(self, int context, int cluster):
+        # check if new cluster
+        if cluster in self.cluster_assignments.values():
+            self.clusters[cluster] = RewardCluster(self.n_stim)
+
+        self.cluster_assignments[context] = cluster  # note, there's no check built in here
+        self.log_prior = get_prior_log_probability(self.cluster_assignments, self.alpha)
 
     cpdef double get_log_likelihood(self):
         cdef double log_likelihood = 0
