@@ -107,7 +107,7 @@ class MultiStepAgent(object):
     def get_reward_function(self, state):
         pass
 
-    def cull_hypotheses(self, threshold=50.):
+    def prune_hypothesis_space(self, threshold=50.):
         pass
 
     def generate(self):
@@ -151,7 +151,7 @@ class MultiStepAgent(object):
 
             if step_counter[t] == 1:
                 times_seen_ctx[c] += 1
-                self.cull_hypotheses()
+                self.prune_hypothesis_space(threshold=50)
 
             # if step_counter[t] == 100:
             #     self.task.current_trial_number += 1
@@ -411,7 +411,7 @@ class JointClustering(ModelBasedAgent):
 
             self.log_belief[ii] = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
 
-    def cull_hypotheses(self, threshold=50.):
+    def prune_hypothesis_space(self, threshold=50.):
         new_log_belief = []
         new_task_sets = []
         max_belief = np.max(self.log_belief)
@@ -520,7 +520,7 @@ class IndependentClusterAgent(ModelBasedAgent):
             assert type(h_m) is MappingHypothesis
             self.log_belief_map[ii] = h_m.get_log_posterior()
 
-    def cull_hypotheses(self, threshold=50.):
+    def prune_hypothesis_space(self, threshold=50.):
         new_log_belief_rew = []
         new_reward_hypotheses = []
         max_belief = np.max(self.log_belief_rew)
