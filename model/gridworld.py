@@ -352,6 +352,21 @@ class Task(object):
 
         return s, action, aa, r, sp
 
+    def get_mapping_function(self, aa):
+        mapping = np.zeros((self.n_primitive_actions, self.n_abstract_actions), dtype=float)
+        for a, dir_ in self.current_trial.action_map.iteritems():
+            aa0 = self.current_trial.abstract_action_key[dir_]
+            mapping[a, aa0] = 1
+
+        return np.squeeze(mapping[:, aa])
+
+    def get_reward_function(self):
+        rewards = np.zeros(self.n_states, dtype=float)
+
+        # average over all entering states...
+        for sp in range(self.n_states):
+            rewards[sp] = self.current_trial.reward_function[:, sp].mean() > 0
+        return rewards
 
 class Room(object):
     def __init__(self, grid_world_size, walls, action_map, goal, start_location, context,
@@ -701,7 +716,7 @@ def randomize_order(context_balance, hazard_rates):
                     available_contexts += [ctx] * context_presentations[ctx]
 
             # randomly select one available context
-            if available_contexts: # check if empty!
+            if available_contexts:  # check if empty!
                 current_context = available_contexts[np.random.randint(len(available_contexts))]
                 n_repeats = -1
 
@@ -726,6 +741,8 @@ def make_task(context_balance, context_goals, context_maps, hazard_rates, start_
     # list of goals and list of mappings depend on the context order
     list_goals = [context_goals[ctx] for ctx in list_context]
     list_maps = [context_maps[ctx] for ctx in list_context]
+
+    # print list_context, list_goals, list_maps
 
     if list_walls is None:
         list_walls = [[]] * len(list_context)

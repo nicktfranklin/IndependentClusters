@@ -119,11 +119,15 @@ cpdef double get_prior_log_probability(dict ctx_assignment, double alpha):
     cdef double log_prob = 0
 
     cdef int n_ctx = len(ctx_assignment.keys())
-    cdef int K = len(set(ctx_assignment.values()))
+    cdef int K
+    if len(ctx_assignment) > 0:
+        K = max(ctx_assignment.values()) + 1
+    else:
+        K = 1
     cdef int [:] n_k = np.zeros(K, dtype=INT_DTYPE)
 
-    n_k[0] = 1
-    for ii in range(1, n_ctx):
+    # n_k[0] = 1
+    for ii in ctx_assignment.keys():
         k = ctx_assignment[ii]
         if n_k[k] == 0:
             log_prob += log(alpha / (np.sum(n_k) + alpha))

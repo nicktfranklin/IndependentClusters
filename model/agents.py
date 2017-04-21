@@ -27,7 +27,7 @@ def enumerate_assignments(max_context_number):
     :param max_context_number: int
     :return: list of lists, each a function that takes in a context id number and returns a cluster id number
     """
-    cluster_assignments = []  # context 0 is always in cluster 1
+    cluster_assignments = [{}]  # context 0 is always in cluster 1
 
     for contextNumber in range(0, max_context_number):
         cluster_assignments = augment_assignments(cluster_assignments, contextNumber)
@@ -36,8 +36,7 @@ def enumerate_assignments(max_context_number):
 
 
 def augment_assignments(cluster_assignments, new_context):
-
-    if len(cluster_assignments) == 0:
+    if (len(cluster_assignments) == 0) | (len(cluster_assignments[0]) == 0):
         _cluster_assignments = list()
         _cluster_assignments.append({new_context: 0})
     else:
@@ -79,6 +78,14 @@ def displacement_to_abstract_action(dx, dy):
         return -1
 
 
+def kl_divergence(q, p):
+    d = 0
+    for q_ii, p_ii in zip(q, p):
+        if (p_ii > 0) & (q_ii > 0):
+            d += p_ii * np.log2(p_ii/q_ii)
+    return d
+
+
 class MultiStepAgent(object):
 
     def __init__(self, task):
@@ -110,8 +117,12 @@ class MultiStepAgent(object):
     def prune_hypothesis_space(self, threshold=50.):
         pass
 
-    def generate(self):
+    def augment_assignments(self, context):
+        pass
+
+    def generate(self, pruning_threshold=1000):
         """ run through all of the trials of a task and output trial-by-trial data
+        :param pruning_threshold:
         :return:
         """
 
@@ -133,6 +144,17 @@ class MultiStepAgent(object):
 
             _, c = state
 
+            if step_counter[t] == 1:
+                times_seen_ctx[c] += 1
+
+                # entering a new context, prune the hypothesis space and then augment for new context
+                if times_seen_ctx[c] == 1:
+
+                    self.prune_hypothesis_space(threshold=pruning_threshold)
+
+                    # augment the clustering assignments
+                    self.augment_assignments(c)
+
             # select an action
             action = self.select_action(state)
 
@@ -145,20 +167,10 @@ class MultiStepAgent(object):
             # take an action
             experience_tuple = self.task.move(action)
             ((x, y), c), a, aa, r, ((xp, yp), _) = experience_tuple
+            # print ("Trial %d, step %d:" % (t, step_counter[t])), experience_tuple
 
             # update the learner
             self.update(experience_tuple)
-
-            if step_counter[t] == 1:
-                times_seen_ctx[c] += 1
-                self.prune_hypothesis_space(threshold=50)
-
-            # if step_counter[t] == 100:
-            #     self.task.current_trial_number += 1
-            #     if self.task.current_trial_number < len(self.task.trials):
-            #         self.task.current_trial = self.task.trials[self.task.current_trial_number]
-            #     else:
-            #         self.task.current_trial = None
 
             results.append(pd.DataFrame({
                 'Start Location': [(x, y)],
@@ -215,16 +227,12 @@ class FullInformationAgent(MultiStepAgent):
         (x, y), c = state
 
         abstract_action = self.select_abstract_action(state)
-        # print "Abstract Action Selected: ", abstract_action, _abstract_action_to_displacement(abstract_action)
 
         # use the actual action_mapping to get the correct primitive action key
         inverse_abstract_action_key = {aa: move for move, aa in self.task.current_trial.abstract_action_key.iteritems()}
         inverse_action_map = {move: key_press for key_press, move in self.task.current_trial.action_map.iteritems()}
-        key_press_to_primitive = {key_press: ii for ii, key_press in enumerate(self.task.primitive_actions)}
 
         move = inverse_abstract_action_key[abstract_action]
-        # print move, inverse_abstract_action_key, inverse_action_map, key_press_to_primitive
-        # print inverse_action_map
         key_press = inverse_action_map[move]
         return key_press
         # a = key_press_to_primitive[key_press]
@@ -362,58 +370,81 @@ class JointClustering(ModelBasedAgent):
         self.n_abstract_actions = self.task.n_abstract_actions
         self.n_primitive_actions = self.task.n_primitive_actions
 
-        # get the list of enumerated set assignments!
-        set_assignments = enumerate_assignments(self.task.n_ctx)
-
         # create task sets, each containing a reward and mapping hypothesis with the same assignement
-        self.task_sets = []
-        for assignment in set_assignments:
+        self.reward_hypotheses = [RewardHypothesis(
+                self.task.n_states, inverse_temperature, discount_rate, iteration_criterion, alpha
+            )]
+        self.mapping_hypotheses = [MappingHypothesis(
+                self.task.n_primitive_actions, self.task.n_abstract_actions, alpha, mapping_prior
+            )]
 
-            self.task_sets.append({
-                'Reward Hypothesis': RewardHypothesis(
-                    self.task.n_states, inverse_temperature, discount_rate, iteration_criterion,
-                    assignment, alpha
-                ),
-                'Mapping Hypothesis': MappingHypothesis(
-                    self.task.n_primitive_actions, self.task.n_abstract_actions, assignment, alpha, mapping_prior
-                ),
-            })
-
-        self.log_belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
+        self.log_belief = np.ones(1, dtype=float)
 
     def updating_mapping(self, c, a, aa):
-        for ts in self.task_sets:
-            h_m = ts['Mapping Hypothesis']
+        for h_m in self.mapping_hypotheses:
             assert type(h_m) is MappingHypothesis
             h_m.updating_mapping(c, a, aa)
 
     def update_rewards(self, c, sp, r):
-        for ts in self.task_sets:
-            h_r = ts['Reward Hypothesis']
+        for h_r in self.reward_hypotheses:
             assert type(h_r) is RewardHypothesis
             h_r.update(c, sp, r)
 
     def update(self, experience_tuple):
 
-        # super(FlatAgent, self).update(experience_tuple)
         _, a, aa, r, (loc_prime, c) = experience_tuple
         self.updating_mapping(c, a, aa)
         sp = self.task.state_location_key[loc_prime]
         self.update_rewards(c, sp, r)
 
-        # then update the posterior
-        for ii, ts in enumerate(self.task_sets):
-            h_m = ts['Mapping Hypothesis']
-            h_r = ts['Reward Hypothesis']
+        self.log_belief = np.zeros(len(self.mapping_hypotheses))
+        for ii, h_m in enumerate(self.mapping_hypotheses):
+            self.log_belief[ii] = h_m.get_log_prior()
 
-            assert type(h_m) is MappingHypothesis
+        # then update the posterior of the belief distribution with the reward posterior
+        for ii, h_r in enumerate(self.reward_hypotheses):
             assert type(h_r) is RewardHypothesis
+            self.log_belief[ii] = h_r.get_log_likelihood()
 
-            self.log_belief[ii] = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
+        # then update the posterior of the mappings likelihood (prior is shared, only need it once)
+        for ii, h_m in enumerate(self.mapping_hypotheses):
+            assert type(h_m) is MappingHypothesis
+            self.log_belief[ii] += h_m.get_log_likelihood()
+            # print ii, h_m.get_log_likelihood()
+
+    def augment_assignments(self, context):
+        new_reward_hypotheses = list()
+        new_mapping_hypotheses = list()
+        new_log_belief = list()
+
+        for h_r, h_m in zip(self.reward_hypotheses, self.mapping_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            assert type(h_m) is MappingHypothesis
+
+            old_assignments = h_r.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_r0 = h_r.deep_copy()
+                h_r0.add_new_context_assignment(context, k)
+
+                h_m0 = h_m.deep_copy()
+                h_m0.add_new_context_assignment(context, k)
+
+                new_reward_hypotheses.append(h_r0)
+                new_mapping_hypotheses.append(h_m0)
+                new_log_belief.append(h_r0.get_log_posterior() + h_m0.get_log_likelihood())
+
+        self.reward_hypotheses = new_reward_hypotheses
+        self.mapping_hypotheses = new_mapping_hypotheses
+        self.log_belief = new_log_belief
 
     def prune_hypothesis_space(self, threshold=50.):
         new_log_belief = []
-        new_task_sets = []
+        new_reward_hypotheses = []
+        new_mapping_hypotheses = []
         max_belief = np.max(self.log_belief)
 
         log_threshold = np.log(threshold)
@@ -421,16 +452,21 @@ class JointClustering(ModelBasedAgent):
         for ii, log_b in enumerate(self.log_belief):
             if max_belief - log_b < log_threshold:
                 new_log_belief.append(log_b)
-                new_task_sets.append(self.task_sets[ii])
+                new_reward_hypotheses.append(self.reward_hypotheses[ii])
+                new_mapping_hypotheses.append(self.mapping_hypotheses[ii])
+            # else:
+            #     print "(Joint) Removing hypothesis", max_belief, log_b, log_threshold
+
         self.log_belief = new_log_belief
-        self.task_sets = new_task_sets
+        self.reward_hypotheses = new_reward_hypotheses
+        self.mapping_hypotheses = new_mapping_hypotheses
 
     def select_abstract_action(self, state):
         (x, y), c = state
         s = self.task.state_location_key[(x, y)]
 
         ii = np.argmax(self.log_belief)
-        h_r = self.task_sets[ii]['Reward Hypothesis']
+        h_r = self.reward_hypotheses[ii]
         q_values = h_r.select_abstract_action_pmf(s, c, self.task.current_trial.transition_function)
 
         full_pmf = np.exp(q_values * self.inverse_temperature)
@@ -445,7 +481,7 @@ class JointClustering(ModelBasedAgent):
         c = np.int32(c)
 
         ii = np.argmax(self.log_belief)
-        h_m = self.task_sets[ii]['Mapping Hypothesis']
+        h_m = self.mapping_hypotheses[ii]
 
         mapping_mle = np.zeros(self.n_primitive_actions)
         for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
@@ -470,28 +506,17 @@ class IndependentClusterAgent(ModelBasedAgent):
         self.n_primitive_actions = self.task.n_primitive_actions
 
         # get the list of enumerated set assignments!
-        set_assignments = enumerate_assignments(self.task.n_ctx)
 
         # create task sets, each containing a reward and mapping hypothesis with the same assignement
-        self.reward_hypotheses = []
-        self.mapping_hypotheses = []
-        for assignment in set_assignments:
+        self.reward_hypotheses = [RewardHypothesis(
+                self.task.n_states, inverse_temperature, discount_rate, iteration_criterion, alpha
+            )]
+        self.mapping_hypotheses = [MappingHypothesis(
+                self.task.n_primitive_actions, self.task.n_abstract_actions, alpha, mapping_prior
+            )]
 
-            self.reward_hypotheses.append(
-                RewardHypothesis(
-                    self.task.n_states, inverse_temperature, discount_rate, iteration_criterion,
-                    assignment, alpha
-                )
-            )
-
-            self.mapping_hypotheses.append(
-                MappingHypothesis(
-                    self.task.n_primitive_actions, self.task.n_abstract_actions, assignment, alpha, mapping_prior
-                ),
-            )
-
-        self.log_belief_rew = np.ones(len(self.reward_hypotheses)) / float(len(self.reward_hypotheses))
-        self.log_belief_map = np.ones(len(self.mapping_hypotheses)) / float(len(self.mapping_hypotheses))
+        self.log_belief_rew = np.ones(1, dtype=float)
+        self.log_belief_map = np.ones(1, dtype=float)
 
     def updating_mapping(self, c, a, aa):
         for h_m in self.mapping_hypotheses:
@@ -520,6 +545,49 @@ class IndependentClusterAgent(ModelBasedAgent):
             assert type(h_m) is MappingHypothesis
             self.log_belief_map[ii] = h_m.get_log_posterior()
 
+    def augment_assignments(self, context):
+        new_hypotheses = list()
+        new_log_belief = list()
+
+        for h_r in self.reward_hypotheses:
+            assert type(h_r) is RewardHypothesis
+
+            old_assignments = h_r.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_r0 = h_r.deep_copy()
+                h_r0.add_new_context_assignment(context, k)
+
+                new_hypotheses.append(h_r0)
+                new_log_belief.append(h_r0.get_log_prior() + h_r0.get_log_likelihood())
+
+        self.reward_hypotheses = new_hypotheses
+        self.log_belief_rew = new_log_belief
+
+        new_hypotheses = list()
+        new_log_belief = list()
+
+        for h_m in self.mapping_hypotheses:
+            assert type(h_m) is MappingHypothesis
+
+            old_assignments = h_m.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_m0 = h_m.deep_copy()
+                h_m0.add_new_context_assignment(context, k)
+
+                new_hypotheses.append(h_m0)
+                new_log_belief.append(h_m0.get_log_prior() + h_m0.get_log_likelihood())
+
+        self.mapping_hypotheses = new_hypotheses
+        self.log_belief_map = new_log_belief
+
     def prune_hypothesis_space(self, threshold=50.):
         new_log_belief_rew = []
         new_reward_hypotheses = []
@@ -531,6 +599,8 @@ class IndependentClusterAgent(ModelBasedAgent):
             if max_belief - log_b < log_threshold:
                 new_log_belief_rew.append(log_b)
                 new_reward_hypotheses.append(self.reward_hypotheses[ii])
+            # else:
+            #     print "(Ind, Rew) Removing hypothesis", max_belief, log_b, log_threshold
 
         self.log_belief_rew = new_log_belief_rew
         self.reward_hypotheses = new_reward_hypotheses
@@ -542,6 +612,8 @@ class IndependentClusterAgent(ModelBasedAgent):
             if max_belief - log_b < log_threshold:
                 new_log_belief_map.append(log_b)
                 new_mapping_hypotheses.append(self.mapping_hypotheses[ii])
+            # else:
+            #     print "(Ind, Map) Removing hypothesis", max_belief, log_b, log_threshold
 
         self.log_belief_map = new_log_belief_map
         self.mapping_hypotheses = new_mapping_hypotheses
@@ -595,24 +667,17 @@ class FlatControlAgent(ModelBasedAgent):
         self.n_abstract_actions = self.task.n_abstract_actions
         self.n_primitive_actions = self.task.n_primitive_actions
 
-        # get the list of enumerated set assignments!
-        set_assignments = [{ii: ii for ii in range(task.n_ctx)}]
-
         # create task sets, each containing a reward and mapping hypothesis with the same assignement
-        self.task_sets = []
-        for assignment in set_assignments:
-
-            self.task_sets.append({
+        self.task_sets = [{
                 'Reward Hypothesis': RewardHypothesis(
-                    self.task.n_states, inverse_temperature, discount_rate, iteration_criterion,
-                    assignment, alpha
+                    self.task.n_states, inverse_temperature, discount_rate, iteration_criterion, alpha
                 ),
                 'Mapping Hypothesis': MappingHypothesis(
-                    self.task.n_primitive_actions, self.task.n_abstract_actions, assignment, alpha, mapping_prior
+                    self.task.n_primitive_actions, self.task.n_abstract_actions, alpha, mapping_prior
                 ),
-            })
+            }]
 
-        self.log_belief = np.ones(len(self.task_sets)) / float(len(self.task_sets))
+        self.log_belief = np.ones(1)
 
     def updating_mapping(self, c, a, aa):
         for ts in self.task_sets:
@@ -644,6 +709,20 @@ class FlatControlAgent(ModelBasedAgent):
 
             self.log_belief[ii] = h_m.get_log_prior() + h_m.get_log_likelihood() + h_r.get_log_likelihood()
 
+    def augment_assignments(self, context):
+
+        ts = self.task_sets[0]
+        h_m = ts['Mapping Hypothesis']
+        h_r = ts['Reward Hypothesis']
+        assert type(h_m) is MappingHypothesis
+        assert type(h_r) is RewardHypothesis
+
+        h_m.add_new_context_assignment(context, context)
+        h_r.add_new_context_assignment(context, context)
+
+        self.task_sets = [{'Reward Hypothesis': h_r, 'Mapping Hypothesis': h_m}]
+        self.log_belief = [1]
+
     def select_abstract_action(self, state):
         (x, y), c = state
         s = self.task.state_location_key[(x, y)]
@@ -657,14 +736,12 @@ class FlatControlAgent(ModelBasedAgent):
 
         return sample_cmf(full_pmf.cumsum())
 
-
     def select_action(self, state):
 
         _, c = state
         aa = self.select_abstract_action(state)
         c = np.int32(c)
 
-        # print "context:", c, "abstract action:", aa
         ii = np.argmax(self.log_belief)
         h_m = self.task_sets[ii]['Mapping Hypothesis']
 

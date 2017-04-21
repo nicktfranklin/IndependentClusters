@@ -9,7 +9,7 @@ from model import MapClusteringAgent
 
 
 # Define a function to Simulate the Models
-def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None):
+def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None, pruning_threshold=1000):
     _kwargs = copy.copy(task_kwargs)
     del _kwargs['list_goal_priors']
     task = make_task(**_kwargs)
@@ -18,14 +18,14 @@ def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None)
     else:
         agent = agent_class(task)
 
-    results = agent.generate()
+    results = agent.generate(pruning_threshold=pruning_threshold)
     results['Simulation Number'] = [simulation_number] * len(results)
     results['Cumulative Steps Taken'] = results['n actions taken'].cumsum()
 
     return results
 
 
-def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0):
+def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_threshold=1000):
     if agent_kwargs is None:
         agent_kwargs = dict(alpha=alpha)
     elif 'alpha' not in agent_kwargs.keys():
@@ -35,9 +35,11 @@ def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0):
     results_ic = [None] * n_sim
     results_fl = [None] * n_sim
     for ii in tqdm(range(n_sim)):
-        results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs)
-        results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs)
-        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs)
+        results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
+                                      pruning_threshold=pruning_threshold)
+        results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs=agent_kwargs,
+                                      pruning_threshold=pruning_threshold)
+        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold)
 
     results_jc = pd.concat(results_jc)
     results_ic = pd.concat(results_ic)
