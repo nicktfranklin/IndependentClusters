@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import tqdm
 
 
 def softmax_to_pdf(q_values, inverse_temperature):
@@ -215,3 +216,28 @@ class SimpleJoint(object):
 
         # update the statics on the MAP cluster only
         self.r_events[t][k_max][door][r] += 1.0
+
+
+def make_room_runner(n_sim, reward_function, sucessor_function):
+    def run_rooms(agent_class, params, desc):
+        steps_to_goal = [None] * n_sim
+        for ii in tqdm(range(n_sim), desc=desc, leave=False):
+
+            current_room = 0
+            t = 0
+
+            agent = agent_class(*params)
+            while True:
+                door = agent.pick_door(current_room)
+                r = reward_function[current_room, door]
+                new_room = sucessor_function[current_room, door]
+
+                agent.update(current_room, door, r)
+
+                current_room = new_room
+                t += 1
+                if r == 1:
+                    break
+            steps_to_goal[ii] = t
+        return steps_to_goal
+    return run_rooms
