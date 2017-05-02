@@ -51,6 +51,22 @@ def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_thre
     return pd.concat([results_jc, results_ic, results_fl])
 
 
+def simulate_evaluate_map(agent_class, simulation_number, task_kwargs, agent_kwargs=None):
+    _kwargs = copy.copy(task_kwargs)
+    del _kwargs['list_goal_priors']
+    task = make_task(**_kwargs)
+    if agent_kwargs is not None:
+        agent = agent_class(task, **agent_kwargs)
+    else:
+        agent = agent_class(task)
+
+    results = agent.generate(evaluate_map_estimate=True)
+    results['Simulation Number'] = [simulation_number] * len(results)
+    results['Cumulative Steps Taken'] = results['n actions taken'].cumsum()
+
+    return results
+
+
 def simulate_task_with_map_control(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0):
     if agent_kwargs is None:
         agent_kwargs = dict(alpha=alpha)
