@@ -120,16 +120,28 @@ class MultiStepAgent(object):
     def augment_assignments(self, context):
         pass
 
-    def evaluate_map_rewards(self, state):
+    def get_reward_function(self, state):
         pass
+
+    def get_rewards_kl(self, state):
+        f_rew = self.get_reward_function(state)
+        f_rew /= np.sum(f_rew)
+        return kl_divergence(f_rew, self.task.get_reward_function())
+
+    def get_mapping_kl(self, state):
+        pass
+
+    def evaluate_map_rewards(self, state):
+        return None, None, None
 
     def evaluate_map_mapping(self, state):
         pass
 
-    def generate(self, pruning_threshold=1000, evaluate_map_estimate=False):
+    def generate(self, pruning_threshold=1000, evaluate=False, evaluate_map_estimate=False):
         """ run through all of the trials of a task and output trial-by-trial data
         :param pruning_threshold:
-        :param evaluate_map_estimate:
+        :param evaluate: get the KL-divergence of the Model from the task for mappings and rewards
+        :param evaluate_map_estimate: evaluate the MAP estimate against the full distribution
         :return:
         """
 
@@ -169,6 +181,15 @@ class MultiStepAgent(object):
                 kl_map = self.evaluate_map_mapping(state)
                 kl_rew, map_rewards, full_rewards = self.evaluate_map_rewards(state)
 
+            if evaluate:
+                kl_rew = self.get_rewards_kl(state)
+                kl_map = self.get_mapping_kl(state)
+                # kl_rew = 0
+
+            if evaluate & evaluate_map_estimate:
+                print "Can't evaluate both map approximation and the estimate!"
+                raise Exception
+
             # select an action
             action = self.select_action(state)
 
@@ -201,6 +222,10 @@ class MultiStepAgent(object):
                 'goal location': [goal_location],
                 'walls': [walls]
             }
+
+            if evaluate:
+                trial_dict['KL Rewards'] = kl_rew
+                trial_dict['KL Mapping'] = kl_map
 
             if evaluate_map_estimate:
                 trial_dict['KL MAP Mapping'] = kl_map
@@ -511,6 +536,30 @@ class JointClustering(ModelBasedAgent):
 
         return sample_cmf(mapping_mle.cumsum())
 
+    def get_reward_function(self, state):
+        # Get the q-values over abstract actions
+        _, c = state
+
+        ii = np.argmax(self.log_belief)
+        h_r = self.reward_hypotheses[ii]
+        return h_r.get_reward_function(c)
+
+    def get_mapping_kl(self, state):
+        _, c = state
+        ii = np.argmax(self.log_belief)
+        h = self.mapping_hypotheses[ii]
+
+        t = 0
+        q = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        p = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        for aa in range(self.task.n_abstract_actions):
+            p_aa = self.task.get_mapping_function(aa)
+            for a in range(self.task.n_primitive_actions):
+                q[t] = h.get_mapping_probability(c, a, aa)
+                p[t] = p_aa[a]
+                t += 1
+
+        return kl_divergence(q, p)
 
 class IndependentClusterAgent(ModelBasedAgent):
 
@@ -663,6 +712,30 @@ class IndependentClusterAgent(ModelBasedAgent):
         full_pmf = full_pmf / np.sum(full_pmf)
 
         return sample_cmf(full_pmf.cumsum())
+
+    def get_reward_function(self, state):
+        _, c = state
+
+        ii = np.argmax(self.log_belief_rew)
+        h_r = self.reward_hypotheses[ii]
+        return h_r.get_reward_function(c)
+
+    def get_mapping_kl(self, state):
+        _, c = state
+        ii = np.argmax(self.log_belief_map)
+        h_m = self.mapping_hypotheses[ii]
+
+        t = 0
+        q = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        p = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        for aa in range(self.task.n_abstract_actions):
+            p_aa = self.task.get_mapping_function(aa)
+            for a in range(self.task.n_primitive_actions):
+                q[t] = h_m.get_mapping_probability(c, a, aa)
+                p[t] = p_aa[a]
+                t += 1
+
+        return kl_divergence(q, p)
 
     def evaluate_map_rewards(self, state):
         # Get the q-values over abstract actions
@@ -894,6 +967,31 @@ class FlatControlAgent(ModelBasedAgent):
             mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
 
         return sample_cmf(mapping_mle.cumsum())
+
+    def get_reward_function(self, state):
+        # Get the q-values over abstract actions
+        _, c = state
+
+        ii = np.argmax(self.log_belief)
+        h_r = self.task_sets[ii]['Reward Hypothesis']
+        return h_r.get_reward_function(c)
+
+    def get_mapping_kl(self, state):
+        _, c = state
+        ii = np.argmax(self.log_belief)
+        h = self.task_sets[ii]['Mapping Hypothesis']
+
+        t = 0
+        q = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        p = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        for aa in range(self.task.n_abstract_actions):
+            p_aa = self.task.get_mapping_function(aa)
+            for a in range(self.task.n_primitive_actions):
+                q[t] = h.get_mapping_probability(c, a, aa)
+                p[t] = p_aa[a]
+                t += 1
+
+        return kl_divergence(q, p)
 
 
 class MapClusteringAgent(ModelBasedAgent):

@@ -110,7 +110,7 @@ class GridWorld(object):
 
         # make reward function
         self.reward_function = np.zeros((n_states, n_states), dtype=float)
-        self.reward_function[:, :] = -0.5
+        self.reward_function[:, :] = 0
         self.reward_function[:, self.state_location_key[goal]] = 1.0
 
         # store the action map
@@ -368,6 +368,7 @@ class Task(object):
             rewards[sp] = self.current_trial.reward_function[:, sp].mean() > 0
         return rewards
 
+
 class Room(object):
     def __init__(self, grid_world_size, walls, action_map, goal, start_location, context,
                  state_location_key=None, n_abstract_actions=4):
@@ -439,7 +440,7 @@ class Room(object):
 
         # make reward function
         self.reward_function = np.zeros((n_states, n_states), dtype=float)
-        self.reward_function[:, :] = -0.05
+        self.reward_function[:, :] = 0
         self.reward_function[:, self.state_location_key[goal]] = 1.0
 
         # store the action map

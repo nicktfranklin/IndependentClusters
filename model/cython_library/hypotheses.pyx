@@ -362,7 +362,12 @@ cdef class RewardHypothesis(object):
     def get_reward_function(self, int c):
         cdef int k = self.cluster_assignments[c]
         cdef RewardCluster cluster = self.clusters[k]
-        cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.asarray(cluster.get_reward_function())
+
+        cdef int n = len(cluster.get_reward_function())
+        cdef np.ndarray[DTYPE_t, ndim=1] reward_function = np.zeros(n, dtype=DTYPE)
+        cdef int ii
+        for ii in range(n):
+            reward_function[ii] = cluster.get_reward_function()[ii]
 
         return reward_function
 

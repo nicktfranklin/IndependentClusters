@@ -13,7 +13,8 @@ from model import MapClusteringAgent
 
 
 # Define a function to Simulate the Models
-def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None, pruning_threshold=1000):
+def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None, pruning_threshold=1000,
+                 evaluate=False):
 
     task = make_task(**task_kwargs)
     if agent_kwargs is not None:
@@ -21,14 +22,14 @@ def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None,
     else:
         agent = agent_class(task)
 
-    results = agent.generate(pruning_threshold=pruning_threshold)
+    results = agent.generate(pruning_threshold=pruning_threshold, evaluate=evaluate)
     results['Simulation Number'] = [simulation_number] * len(results)
     results['Cumulative Steps Taken'] = results['n actions taken'].cumsum()
 
     return results
 
 
-def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_threshold=1000):
+def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_threshold=1000, evaluate=False):
     if agent_kwargs is None:
         agent_kwargs = dict(alpha=alpha)
     elif 'alpha' not in agent_kwargs.keys():
@@ -39,10 +40,11 @@ def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_thre
     results_fl = [None] * n_sim
     for ii in tqdm(range(n_sim)):
         results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
-                                      pruning_threshold=pruning_threshold)
+                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
         results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs=agent_kwargs,
-                                      pruning_threshold=pruning_threshold)
-        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold)
+                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
+        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+                                      evaluate=evaluate)
 
     results_jc = pd.concat(results_jc)
     results_ic = pd.concat(results_ic)
@@ -74,11 +76,16 @@ def mutual_information(list_a, list_b):
     return h_x + h_y - h_xy
 
 
-def plot_results(df):
+def plot_results(df, poster=False):
     with sns.axes_style('ticks'):
 
-        _ = plt.figure(figsize=(9, 4))
-        gs = gridspec.GridSpec(1, 2, width_ratios=[1.8, 1], wspace=0.4)
+        if not poster:
+            _ = plt.figure(figsize=(9, 4))
+            gs = gridspec.GridSpec(1, 2, width_ratios=[1.8, 1], wspace=0.4)
+        else:
+            _ = plt.figure(figsize=(15, 6.7))
+            gs = gridspec.GridSpec(1, 2, width_ratios=[1.8, 1], wspace=0.4)
+
         ax0 = plt.subplot(gs[0])
         ax1 = plt.subplot(gs[1])
 
