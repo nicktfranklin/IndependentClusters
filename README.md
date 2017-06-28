@@ -40,8 +40,11 @@ notebook file `Demonstration.ipynb`
 
 
 * An information theoretic analysis detailing under what conditions
- it is useful to cluster can be found in `NormativeAnalysis.ipynb` 
- 
+ it is useful to cluster can be found in `NormativeAnalysis.ipynb`
+
+
+* A demonstration of a problem where the explorations costs grow
+with each new context can be found in `Rooms Problem.ipynb`
 
 
 ___
@@ -68,3 +71,5 @@ This library run on Python 2.7 and unlike most python code, requries
 * `model.agents.py`: Defines the reinforcement learning agents. Core functions 
     rely on cython
 * `model.crp.py`: Backend for Normative analysis
+* `model.cython_libary`: core functions optomized for speed with cython
+* `model.rooms_problem`, `model.rooms_agents`: special agents/models need for rooms simulation
