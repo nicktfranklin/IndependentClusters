@@ -149,6 +149,7 @@ class MultiStepAgent(object):
         step_counter = np.zeros(self.task.n_trials)
         results = list()
         times_seen_ctx = np.zeros(self.task.n_ctx)
+        steps_in_ctx = np.zeros(self.task.n_ctx)
 
         if evaluate_map_estimate:
             pruning_threshold = None
@@ -165,6 +166,7 @@ class MultiStepAgent(object):
             step_counter[t] += 1
 
             _, c = state
+            steps_in_ctx[c] += 1
 
             if step_counter[t] == 1:
                 times_seen_ctx[c] += 1
@@ -215,12 +217,13 @@ class MultiStepAgent(object):
                 'action': [inverse_abstract_action_key[aa]],  # the cardinal movement, in words
                 'Reward Collected': [r],
                 'n actions taken': step_counter[t],
-                'TrialNumber': [t],
+                'Trial Number': [t],
                 'In goal': not (self.task.current_trial_number == t),
                 'Times Seen Context': times_seen_ctx[c],
                 'action_map': [action_map],
                 'goal location': [goal_location],
-                'walls': [walls]
+                'walls': [walls],
+                'Steps in Context': steps_in_ctx[c]
             }
 
             if evaluate:

@@ -9,7 +9,6 @@ from matplotlib import gridspec
 from tqdm import tqdm
 
 from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent
-from model import MapClusteringAgent
 
 
 # Define a function to Simulate the Models
@@ -76,15 +75,11 @@ def mutual_information(list_a, list_b):
     return h_x + h_y - h_xy
 
 
-def plot_results(df, poster=False):
+def plot_results(df, figsize=(6, 3)):
     with sns.axes_style('ticks'):
 
-        if not poster:
-            _ = plt.figure(figsize=(9, 4))
-            gs = gridspec.GridSpec(1, 2, width_ratios=[1.8, 1], wspace=0.4)
-        else:
-            _ = plt.figure(figsize=(15, 6.7))
-            gs = gridspec.GridSpec(1, 2, width_ratios=[1.8, 1], wspace=0.4)
+        _ = plt.figure(figsize=figsize)
+        gs = gridspec.GridSpec(1, 2, width_ratios=[1.8, 1], wspace=0.4)
 
         ax0 = plt.subplot(gs[0])
         ax1 = plt.subplot(gs[1])
@@ -92,7 +87,7 @@ def plot_results(df, poster=False):
         # define the parameters to plot the results
         # cc = sns.color_palette("Set 2")
         tsplot_kwargs = dict(
-            time='TrialNumber',
+            time='Trial Number',
             value='Cumulative Steps Taken',
             data=df[df['In goal']],
             unit='Simulation Number',
@@ -105,7 +100,7 @@ def plot_results(df, poster=False):
 
         sns.tsplot(**tsplot_kwargs)
 
-        df0 = df[df['In goal'] & (df.TrialNumber == df.TrialNumber.max())].copy()
+        df0 = df[df['In goal'] & (df['Trial Number'] == df['Trial Number'].max())].copy()
         df0.loc[df0.Model == 'Independent Clustering', 'Model'] = "Independent"
         df0.loc[df0.Model == 'Joint Clustering', 'Model'] = "Joint"
         df0.loc[df0.Model == 'Flat Agent', 'Model'] = "Flat"
