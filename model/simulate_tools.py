@@ -8,7 +8,8 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from tqdm import tqdm
 
-from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent
+from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, MixedClusterAgent
+from model import MixedClusterAgent2
 
 
 # Define a function to Simulate the Models
@@ -23,7 +24,6 @@ def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None,
 
     results = agent.generate(pruning_threshold=pruning_threshold, evaluate=evaluate)
     results['Simulation Number'] = [simulation_number] * len(results)
-    results['Cumulative Steps Taken'] = results['n actions taken'].cumsum()
 
     return results
 
@@ -49,10 +49,57 @@ def simulate_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_thre
     results_ic = pd.concat(results_ic)
     results_fl = pd.concat(results_fl)
 
-    results_jc['Model'] = ['Joint Clustering'] * len(results_jc)
-    results_ic['Model'] = ['Independent Clustering'] * len(results_ic)
-    results_fl['Model'] = ['Flat Agent'] * len(results_fl)
+    results_jc['Model'] = ['Joint'] * len(results_jc)
+    results_ic['Model'] = ['Independent'] * len(results_ic)
+    results_fl['Model'] = ['Flat'] * len(results_fl)
     return pd.concat([results_jc, results_ic, results_fl])
+
+
+def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_threshold=1000,
+                        evaluate=False,
+                        mix_kwargs=None):
+    if agent_kwargs is None:
+        agent_kwargs = dict(alpha=alpha)
+    elif 'alpha' not in agent_kwargs.keys():
+        agent_kwargs['alpha'] = alpha
+
+    if mix_kwargs is None:
+        mix_kwargs = dict(mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.25,)
+    for k, v in agent_kwargs.iteritems():
+        mix_kwargs[k] = v
+
+    results_jc = [None] * n_sim
+    results_ic = [None] * n_sim
+    results_fl = [None] * n_sim
+    results_mx = [None] * n_sim
+    results_mx2 = [None] * n_sim
+    for ii in tqdm(range(n_sim)):
+        results_mx2[ii] = simulate_one(MixedClusterAgent2, ii, task_kwargs, pruning_threshold=pruning_threshold,
+                                      evaluate=evaluate, agent_kwargs=mix_kwargs)
+        results_mx[ii] = simulate_one(MixedClusterAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+                                      evaluate=evaluate, agent_kwargs=mix_kwargs)
+        results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
+                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
+        results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs=agent_kwargs,
+                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
+        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+                                      evaluate=evaluate)
+
+
+
+    results_jc = pd.concat(results_jc)
+    results_ic = pd.concat(results_ic)
+    results_fl = pd.concat(results_fl)
+    results_mx = pd.concat(results_mx)
+    results_mx2 = pd.concat(results_mx2)
+
+
+    results_jc['Model'] = ['Joint'] * len(results_jc)
+    results_ic['Model'] = ['Independent'] * len(results_ic)
+    results_fl['Model'] = ['Flat'] * len(results_fl)
+    results_mx['Model'] = ['Mixed'] * len(results_mx)
+    results_mx2['Model'] = ['Mixed2'] * len(results_mx2)
+    return pd.concat([results_jc, results_ic, results_fl, results_mx, results_mx2])
 
 
 def list_entropy(_list):
@@ -86,29 +133,37 @@ def plot_results(df, figsize=(6, 3)):
 
         # define the parameters to plot the results
         # cc = sns.color_palette("Set 2")
+        df0 = df[df['In goal']].groupby(['Model', 'Simulation Number', 'Trial Number']).mean()
+        df0 = df0.groupby(level=[0, 1]).cumsum().reset_index()
+        df0 = df0.rename(index=str, columns={'n actions taken': "Cumulative Steps Taken"})
+
         tsplot_kwargs = dict(
             time='Trial Number',
             value='Cumulative Steps Taken',
-            data=df[df['In goal']],
+            data=df0,
             unit='Simulation Number',
             condition='Model',
-            estimator=np.median,
+            estimator=np.mean,
             ax=ax0,
             color="Set2",
-            # order=["Independent Clustering", "Joint Clustering", "Flat Agent"]
         )
 
         sns.tsplot(**tsplot_kwargs)
+        df0 = df[df['In goal']].groupby(['Model', 'Simulation Number']).sum()
+        cum_steps = [df0.loc[m]['n actions taken'].values for m in set(df.Model)]
+        model = []
+        for m in set(df.Model):
+            model += [m] * (df[df.Model == m]['Simulation Number'].max() + 1)
+        df1 = pd.DataFrame({
+                'Cumulative Steps Taken': np.concatenate(cum_steps),
+                'Model': model
+            })
 
-        df0 = df[df['In goal'] & (df['Trial Number'] == df['Trial Number'].max())].copy()
-        df0.loc[df0.Model == 'Independent Clustering', 'Model'] = "Independent"
-        df0.loc[df0.Model == 'Joint Clustering', 'Model'] = "Joint"
-        df0.loc[df0.Model == 'Flat Agent', 'Model'] = "Flat"
-
-        sns.violinplot(data=df0, x='Model', y='Cumulative Steps Taken', ax=ax1, palette='Set2',
-                       # order=["Independent", "Joint", "Flat"]
+        sns.violinplot(data=df1, x='Model', y='Cumulative Steps Taken', ax=ax1, palette='Set2',
+                       order=["Flat", "Independent", "Joint"]
                        )
         _, ub = ax1.get_ylim()
         ax1.set_ylim([0, ub])
+        ax0.set_ylim([0, ub])
 
         sns.despine(offset=5)

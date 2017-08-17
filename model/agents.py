@@ -120,7 +120,7 @@ class MultiStepAgent(object):
     def augment_assignments(self, context):
         pass
 
-    def get_reward_function(self, state):
+    def new_trial_function(self):
         pass
 
     def get_rewards_kl(self, state):
@@ -135,6 +135,9 @@ class MultiStepAgent(object):
         return None, None, None
 
     def evaluate_map_mapping(self, state):
+        pass
+
+    def evaluate_mixing_agent(self, xp, yp, c, r):
         pass
 
     def generate(self, pruning_threshold=1000, evaluate=False, evaluate_map_estimate=False):
@@ -170,6 +173,7 @@ class MultiStepAgent(object):
 
             if step_counter[t] == 1:
                 times_seen_ctx[c] += 1
+                self.new_trial_function()
 
                 # entering a new context, prune the hypothesis space and then augment for new context
                 if times_seen_ctx[c] == 1:
@@ -205,6 +209,8 @@ class MultiStepAgent(object):
             experience_tuple = self.task.move(action)
             ((x, y), c), a, aa, r, ((xp, yp), _) = experience_tuple
             # print ("Trial %d, step %d:" % (t, step_counter[t])), experience_tuple
+
+            self.evaluate_mixing_agent(xp, yp, c, r)
 
             # update the learner
             self.update(experience_tuple)
@@ -814,6 +820,353 @@ class IndependentClusterAgent(ModelBasedAgent):
 
         return kl_divergence(map_mapping_mle, full_mapping_mle)
 
+
+class MixedClusterAgent(ModelBasedAgent):
+
+    def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
+                 iteration_criterion=0.01,
+                 mapping_prior=0.01, mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.0):
+
+        assert type(task) is Task
+        super(FullInformationAgent, self).__init__(task)
+
+        self.inverse_temperature = inverse_temperature
+        self.gamma = discount_rate
+        self.iteration_criterion = iteration_criterion
+        self.current_trial = 0
+        self.n_abstract_actions = self.task.n_abstract_actions
+        self.n_primitive_actions = self.task.n_primitive_actions
+
+        # get the list of enumerated set assignments!
+
+        # create task sets, each containing a reward and mapping hypothesis
+        # with the same assignment
+        self.reward_hypotheses = [
+            RewardHypothesis(
+                self.task.n_states, inverse_temperature, discount_rate,
+                iteration_criterion, alpha
+            )]
+        self.mapping_hypotheses = [
+            MappingHypothesis(
+                self.task.n_primitive_actions, self.task.n_abstract_actions,
+                alpha, mapping_prior
+            )]
+
+        self.log_belief_rew = np.ones(1, dtype=float)
+        self.log_belief_map = np.ones(1, dtype=float)
+        self.log_belief_both = np.ones(1, dtype=float)
+        self.operative_model = 'Ind'
+        self.responsibilities = {'Ind': 0.5+mix_bias, 'Joint': 0.5-mix_bias}
+        self.eta = mixing_lrate
+        self.beta = mixing_temp
+
+
+    def updating_mapping(self, c, a, aa):
+        for h_m in self.mapping_hypotheses:
+            assert type(h_m) is MappingHypothesis
+            h_m.updating_mapping(c, a, aa)
+
+    def update_rewards(self, c, sp, r):
+        for h_r in self.reward_hypotheses:
+            assert type(h_r) is RewardHypothesis
+            h_r.update(c, sp, r)
+
+    def update(self, experience_tuple):
+
+        _, a, aa, r, (loc_prime, c) = experience_tuple
+        self.updating_mapping(c, a, aa)
+        sp = self.task.state_location_key[loc_prime]
+        self.update_rewards(c, sp, r)
+
+        # then update the posterior of the rewards
+        for ii, h_r in enumerate(self.reward_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            post = h_r.get_log_posterior()
+            self.log_belief_rew[ii] = post
+            self.log_belief_both[ii] = post
+
+        # then update the posterior of the mappings
+        for ii, h_m in enumerate(self.mapping_hypotheses):
+            assert type(h_m) is MappingHypothesis
+            like = h_m.get_log_likelihood()
+            prior = h_m.get_log_prior()
+            self.log_belief_map[ii] = like + prior
+            self.log_belief_both[ii] += like
+
+    def augment_assignments(self, context):
+        new_reward_hypotheses = list()
+        new_mapping_hypotheses = list()
+        new_log_belief = list()
+        new_log_belief_map = list()
+        new_log_belief_rew = list()
+
+        for h_r, h_m in zip(self.reward_hypotheses, self.mapping_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            assert type(h_m) is MappingHypothesis
+
+            old_assignments = h_r.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_r0 = h_r.deep_copy()
+                h_r0.add_new_context_assignment(context, k)
+
+                h_m0 = h_m.deep_copy()
+                h_m0.add_new_context_assignment(context, k)
+
+                new_reward_hypotheses.append(h_r0)
+                new_mapping_hypotheses.append(h_m0)
+
+                r_post = h_r0.get_log_posterior()
+                m_like = h_m0.get_log_likelihood()
+                m_prior = h_m0.get_log_prior()
+                new_log_belief.append(r_post + m_like)
+                new_log_belief_rew.append(r_post)
+                new_log_belief_map.append(m_like + m_prior)
+
+        self.reward_hypotheses = new_reward_hypotheses
+        self.mapping_hypotheses = new_mapping_hypotheses
+        self.log_belief_both = new_log_belief
+        self.log_belief_map = new_log_belief_map
+        self.log_belief_rew = new_log_belief_rew
+
+    def prune_hypothesis_space(self, threshold=50.):
+        if threshold is not None:
+            new_log_belief = []
+            new_log_belief_map = []
+            new_log_belief_rew = []
+            new_reward_hypotheses = []
+            new_mapping_hypotheses = []
+            max_belief = np.max(self.log_belief_both)
+
+            log_threshold = np.log(threshold)
+
+            for ii, log_b in enumerate(self.log_belief_both):
+                if max_belief - log_b < log_threshold:
+                    new_log_belief.append(log_b)
+                    new_log_belief_map.append(self.log_belief_map[ii])
+                    new_log_belief_rew.append(self.log_belief_rew[ii])
+                    new_reward_hypotheses.append(self.reward_hypotheses[ii])
+                    new_mapping_hypotheses.append(self.mapping_hypotheses[ii])
+
+            self.log_belief_both = new_log_belief
+            self.log_belief_map = new_log_belief_map
+            self.log_belief_rew = new_log_belief_rew
+            self.reward_hypotheses = new_reward_hypotheses
+            self.mapping_hypotheses = new_mapping_hypotheses
+
+    def new_trial_function(self):
+        self.choose_operating_model()
+
+
+    def choose_operating_model(self):
+        # if (np.max(self.log_belief_map) + np.max(self.log_belief_rew)) >= np.max(self.log_belief_both):
+        k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
+
+        if np.random.rand() < (np.exp(self.beta * self.responsibilities['Joint'])/k):
+            self.operative_model = u'Joint'
+        else:
+            self.operative_model = u'Ind'
+
+    def pick_rew_hyp(self):
+        # determine whether to use the ind or joint based on posterior
+        if self.operative_model == u'Ind':
+            return np.argmax(self.log_belief_rew)
+        else:
+            return np.argmax(self.log_belief_both)
+
+    def pick_map_hyp(self):
+        if self.operative_model == u'Ind':
+            return np.argmax(self.log_belief_map)
+        else:
+            return np.argmax(self.log_belief_both)
+
+    def select_abstract_action(self, state):
+        # use softmax greedy choice function
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
+
+        ii = self.pick_rew_hyp()
+        h_r = self.reward_hypotheses[ii]
+
+        q_values = h_r.select_abstract_action_pmf(
+            s, c, self.task.current_trial.transition_function
+        )
+
+        full_pmf = np.exp(q_values * self.inverse_temperature)
+        full_pmf = full_pmf / np.sum(full_pmf)
+
+        return sample_cmf(full_pmf.cumsum())
+
+    def get_reward_function(self, state):
+        _, c = state
+
+        ii = self.pick_rew_hyp()
+        h_r = self.reward_hypotheses[ii]
+        return h_r.get_reward_function(c)
+
+    def get_mapping_kl(self, state):
+        _, c = state
+
+        ii = self.pick_map_hyp()
+        h_m = self.mapping_hypotheses[ii]
+
+        t = 0
+        q = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        p = np.zeros(self.task.n_primitive_actions * self.task.n_abstract_actions)
+        for aa in range(self.task.n_abstract_actions):
+            p_aa = self.task.get_mapping_function(aa)
+            for a in range(self.task.n_primitive_actions):
+                q[t] = h_m.get_mapping_probability(c, a, aa)
+                p[t] = p_aa[a]
+                t += 1
+
+        return kl_divergence(q, p)
+
+    def evaluate_map_rewards(self, state):
+        # Get the q-values over abstract actions
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
+
+        ii = self.pick_rew_hyp()
+        h_r = self.reward_hypotheses[ii]
+
+        map_q_values = h_r.select_abstract_action_pmf(
+            s, c, self.task.current_trial.transition_function
+        )
+
+        belief = np.exp(self.log_belief_rew - np.max(self.log_belief_rew))
+        belief /= belief
+
+        full_q_values = np.zeros(self.task.n_abstract_actions)
+        for ii, p in enumerate(belief):
+            h_r = self.reward_hypotheses[ii]
+            full_q_values += h_r.select_abstract_action_pmf(
+                s, c, self.task.current_trial.transition_function
+            ) * p
+
+        # normalize both
+        # map_q_values = np.exp(map_q_values * self.inverse_temperature)
+        map_q_values /= np.sum(map_q_values)
+        # full_q_values = np.exp(full_q_values * self.inverse_temperature)
+        full_q_values /= np.sum(full_q_values)
+
+        return kl_divergence(map_q_values, full_q_values), map_q_values, full_q_values
+
+    def select_action(self, state):
+        # use softmax greedy choice function
+        _, c = state
+        aa = self.select_abstract_action(state)
+        c = np.int32(c)
+
+        ii = self.pick_map_hyp()
+        h_m = self.mapping_hypotheses[ii]
+
+        mapping_mle = np.zeros(self.n_primitive_actions)
+        for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+            mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+
+        return sample_cmf(mapping_mle.cumsum())
+
+    def evaluate_mixing_agent(self, xp, yp, c, r):
+        sp = self.task.state_location_key[(xp, yp)]
+
+        # get the reward prediction for the MAP joint and MAP ind hypotheses
+        ii = np.argmax(self.log_belief_rew)
+        h_r = self.reward_hypotheses[ii]
+        r_hat_i = h_r.get_reward_prediction(c, sp)
+
+        ii = np.argmax(self.log_belief_both)
+        h_r = self.reward_hypotheses[ii]
+        r_hat_j = h_r.get_reward_prediction(c, sp)
+
+        self.responsibilities['Ind'] += self.eta*(r - r_hat_i)
+        self.responsibilities['Joint'] += self.eta*(r - r_hat_j)
+
+
+
+
+    def evaluate_map_mapping(self, state):
+        # Get the q-values over abstract actions
+        _, c = state
+        aa = self.select_abstract_action(state)
+        c = np.int32(c)
+
+        ii = self.pick_map_hyp()
+        h_m = self.mapping_hypotheses[ii]
+
+        map_mapping_mle = np.zeros(self.n_primitive_actions)
+        for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+            map_mapping_mle[a0] = h_m.get_mapping_probability(c, a0, aa)
+
+        # get the full posterior
+        belief = np.exp(self.log_belief_map - np.max(self.log_belief_map))
+        belief /= np.sum(belief)
+
+        full_mapping_mle = np.zeros(self.n_primitive_actions)
+        for ii, p in enumerate(belief):
+            h_m = self.mapping_hypotheses[ii]
+            for a0 in np.arange(self.n_primitive_actions, dtype=np.int32):
+                full_mapping_mle[a0] += h_m.get_mapping_probability(c, a0, aa) * p
+
+        # normalize both
+        map_mapping_mle /= np.sum(map_mapping_mle)
+        full_mapping_mle /= np.sum(full_mapping_mle)
+
+        return kl_divergence(map_mapping_mle, full_mapping_mle)
+
+
+class MixedClusterAgent2(MixedClusterAgent):
+
+    def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
+                 iteration_criterion=0.01,
+                 mapping_prior=0.01, mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.0,
+                 prediction_threshold=0.05):
+
+        assert type(task) is Task
+        super(MixedClusterAgent2, self).__init__(task, inverse_temperature, alpha, discount_rate, iteration_criterion,
+                 mapping_prior, mixing_lrate, mixing_temp, mix_bias)
+
+        self.received_pe_ind = False
+        self.received_pe_joint = False
+        self.prediction_threshold = prediction_threshold
+
+    def new_trial_function(self):
+        self.choose_operating_model()
+
+        self.received_pe_joint = False
+        self.received_pe_ind = False
+
+    def choose_operating_model(self):
+        # if (np.max(self.log_belief_map) + np.max(self.log_belief_rew)) >= np.max(self.log_belief_both):
+        k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
+
+        if np.random.rand() < (np.exp(self.beta * self.responsibilities['Joint'])/k):
+            self.operative_model = u'Joint'
+        else:
+            self.operative_model = u'Ind'
+
+    def evaluate_mixing_agent(self, xp, yp, c, r):
+        sp = self.task.state_location_key[(xp, yp)]
+
+        # get the reward prediction for the MAP joint and MAP ind hypotheses
+        ii = np.argmax(self.log_belief_rew)
+        h_r = self.reward_hypotheses[ii]
+        r_hat_i = h_r.get_reward_prediction(c, sp)
+
+        ii = np.argmax(self.log_belief_both)
+        h_r = self.reward_hypotheses[ii]
+        r_hat_j = h_r.get_reward_prediction(c, sp)
+
+        if (self.received_pe_joint == False) & ((r > 0) | (r_hat_j > self.prediction_threshold)):
+            self.responsibilities['Joint'] += self.eta*(r - r_hat_j)
+            self.received_pe_joint = True
+
+        if (self.received_pe_ind == False) & ((r > 0) | (r_hat_i > self.prediction_threshold)):
+            self.responsibilities['Ind'] += self.eta * (r - r_hat_i)
+            self.received_pe_ind = True
 
 class IndependentClusterAgentFullBayes(IndependentClusterAgent):
 

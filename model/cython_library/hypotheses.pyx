@@ -206,6 +206,12 @@ cdef class RewardCluster(object):
         cdef int idx = int(r>0)
         return self.reward_probability[sp, idx]
 
+    def get_reward_prediction(self, int sp):
+        if self.reward_visits[sp] > 0.1:
+            return self.reward_function[sp]
+        else:
+            return 0
+
     def get_reward_function(self):
         return self.reward_function
 
@@ -377,6 +383,12 @@ cdef class RewardHypothesis(object):
         cdef np.ndarray[DTYPE_t, ndim=1] reward_visits = np.asarray(cluster.get_reward_visits())
 
         return reward_visits
+
+    def get_reward_prediction(self, int c, int sp):
+        cdef int k = self.cluster_assignments[c]
+        cdef RewardCluster cluster = self.clusters[k]
+        cdef double r = cluster.get_reward_prediction(sp)
+        return r
 
     def set_reward_prior(self, list list_goals):
         cdef int k

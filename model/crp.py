@@ -74,7 +74,6 @@ def kl_divergence(context_goals, pmf, alpha=1.0):
     return goal_guesses / n_guesses
 
 
-
 def evaluate(context_goals, alpha=1.0, max_goals=4):
     context_goal_pairs = make_dict(context_goals)
     crp = CRP(alpha=alpha, max_goals=max_goals)
@@ -87,6 +86,7 @@ def evaluate(context_goals, alpha=1.0, max_goals=4):
         crp.update(c, k)
         n_guesses += 1
     return goal_guesses / n_guesses
+
 
 def evaluate_joint(context_goals, context_maps, alpha=1.0, max_goals=4):
     context_goal_pairs = make_dict(context_maps)
@@ -110,6 +110,37 @@ def evaluate_joint(context_goals, context_maps, alpha=1.0, max_goals=4):
 
     return goal_guesses / n_guesses
 
+
+def evaluate_onezero(context_goals, alpha=1.0, max_goals=4):
+    context_goal_pairs = make_dict(context_goals)
+    crp = CRP(alpha=alpha, max_goals=max_goals)
+
+    goal_guesses = 0
+    n_guesses = 0
+    for c, k in context_goal_pairs.iteritems():
+        crp_pmf = crp.predict_goal()
+        goal_guesses += 1-crp_pmf[k]
+        crp.update(c, k)
+        n_guesses += 1
+    return goal_guesses / n_guesses
+
+
+def upperbound_onezero(context_goals):
+    p = (np.bincount(context_goals) / float(np.shape(context_goals)[0]))
+    error = 0.0
+    for c in context_goals:
+        error += 1-p[c]
+
+    return error / len(context_goals)
+
+
+def upperbound2_onezero(context_goals):
+    p = (np.bincount(context_goals) / float(np.shape(context_goals)[0]))
+    error = 0.0
+    for c in context_goals:
+        error += float(p[c] == np.max(p))
+
+    return error / len(context_goals)
 
 def plot_evaluate(context_goals, max_goals=4):
     print "Entropy H(Goal):           %.2f" % list_entropy(context_goals)
@@ -136,6 +167,36 @@ def plot_evaluate(context_goals, max_goals=4):
     sns.despine()
     return ax
 
+
+def plot_evaluate_onezero(context_goals, max_goals=4):
+    print "Entropy H(Goal):           %.2f" % list_entropy(context_goals)
+    plt.figure(figsize=(8, 5))
+    x = np.arange(0.10, 10.0, 0.05)
+    h = [evaluate_onezero(context_goals, alpha=x0, max_goals=max_goals) for x0 in x]
+    handle_ind, = plt.plot(x, h, label='Goal Clustering')
+
+    chance_probability = 1.0/max_goals
+    handle_ub, = plt.plot([0, 10], [chance_probability, chance_probability], 'k:',
+            label='Uniform Guess over Goals')
+
+    upper_bound = upperbound_onezero(context_goals)
+    handle_lb0, = plt.plot([0, 10], [upper_bound, upper_bound], 'k--',
+            label='Generative Distribution')
+
+    upper_bound = upperbound2_onezero(context_goals)
+    handle_lb1, = plt.plot([0, 10], [upper_bound, upper_bound], 'k--',
+            label='Guess Max Distribution')
+
+    ax = plt.gca()
+    ax.set_position([0.1,0.1,0.5,0.8])
+    plt.legend(handles=[handle_ind, handle_ub, handle_lb0, handle_lb1], loc='center left',
+               bbox_to_anchor = (1.0, 0.5))
+    _, ub = ax.get_ylim()
+    ax.set_ylim([0, ub*1.1])
+    ax.set_xlabel('Alpha')
+    ax.set_ylabel('Entropy (bits)')
+    sns.despine()
+    return ax
 
 def plot_evaluate_joint(context_goals, context_maps, max_goals=4):
     print "Entropy H(Goal):           %.2f" % list_entropy(context_goals)
