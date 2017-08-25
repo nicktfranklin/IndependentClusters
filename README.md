@@ -38,6 +38,10 @@ This repository contains a simplified demonstration that parallels
 * A demonstration of the model's performance can be found in the 
 notebook file `Demonstration.ipynb`
 
+* A demonstration of a meta-agent that uses a reinforcement learning 
+process to arbitrate between Joint and Independent clustering can be
+found in the notebook file `Demonstration - Meta agent.ipynb`
+
 
 * An information theoretic analysis detailing under what conditions
  it is useful to cluster can be found in `NormativeAnalysis.ipynb`
