@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from tqdm import tqdm
 
-from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, MixedClusterAgent
+from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, SimpleMixed
 from model import MixedClusterAgent2
 
 
@@ -74,9 +74,7 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
     results_mx = [None] * n_sim
     results_mx2 = [None] * n_sim
     for ii in tqdm(range(n_sim)):
-        results_mx2[ii] = simulate_one(MixedClusterAgent2, ii, task_kwargs, pruning_threshold=pruning_threshold,
-                                      evaluate=evaluate, agent_kwargs=mix_kwargs)
-        results_mx[ii] = simulate_one(MixedClusterAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+        results_mx[ii] = simulate_one(SimpleMixed, ii, task_kwargs, pruning_threshold=pruning_threshold,
                                       evaluate=evaluate, agent_kwargs=mix_kwargs)
         results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
                                       pruning_threshold=pruning_threshold, evaluate=evaluate)
@@ -91,15 +89,13 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
     results_ic = pd.concat(results_ic)
     results_fl = pd.concat(results_fl)
     results_mx = pd.concat(results_mx)
-    results_mx2 = pd.concat(results_mx2)
 
 
     results_jc['Model'] = ['Joint'] * len(results_jc)
     results_ic['Model'] = ['Independent'] * len(results_ic)
     results_fl['Model'] = ['Flat'] * len(results_fl)
     results_mx['Model'] = ['Mixed'] * len(results_mx)
-    results_mx2['Model'] = ['Mixed2'] * len(results_mx2)
-    return pd.concat([results_jc, results_ic, results_fl, results_mx, results_mx2])
+    return pd.concat([results_jc, results_ic, results_fl, results_mx])
 
 
 def list_entropy(_list):

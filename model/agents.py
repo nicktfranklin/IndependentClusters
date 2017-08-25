@@ -570,6 +570,12 @@ class JointClustering(ModelBasedAgent):
 
         return kl_divergence(q, p)
 
+    def get_reward_prediction(self, x, y, c):
+        sp = self.task.state_location_key[(x, y)]
+        ii = np.argmax(self.log_belief)
+        h_r = self.reward_hypotheses[ii]
+        return h_r.get_reward_prediction(c, sp)
+
 class IndependentClusterAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
@@ -820,6 +826,83 @@ class IndependentClusterAgent(ModelBasedAgent):
 
         return kl_divergence(map_mapping_mle, full_mapping_mle)
 
+    def get_reward_prediction(self, x, y, c):
+        sp = self.task.state_location_key[(x, y)]
+        ii = np.argmax(self.log_belief_rew)
+        h_r = self.reward_hypotheses[ii]
+        return h_r.get_reward_prediction(c, sp)
+
+class SimpleMixed(ModelBasedAgent):
+
+    def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
+                 iteration_criterion=0.01,
+                 mapping_prior=0.01, mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.0):
+        assert type(task) is Task
+        super(FullInformationAgent, self).__init__(task)
+
+        self.independent_agent = IndependentClusterAgent(
+            task, inverse_temperature=inverse_temperature,  alpha=alpha, discount_rate=discount_rate,
+                 iteration_criterion=iteration_criterion, mapping_prior=mapping_prior
+        )
+        self.joint_agent = JointClustering(
+            task, inverse_temperature=inverse_temperature,  alpha=alpha, discount_rate=discount_rate,
+                 iteration_criterion=iteration_criterion, mapping_prior=mapping_prior
+        )
+
+
+        self.responsibilities = {'Ind': 0.5 + mix_bias, 'Joint': 0.5 - mix_bias}
+        self.eta = mixing_lrate
+        self.beta = mixing_temp
+        self.is_mixture = True
+
+        self.choose_operating_model()
+
+        # self.current_agent = self.independent_agent
+        # self.current_agent_name = 'Ind'
+        # if np.random.rand() < 0.5:
+        #     self.current_agent = self.joint_agent
+        #     self.current_agent_name = 'Joint'
+    def get_joint_probability(self):
+        k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
+        return np.exp(self.beta * self.responsibilities['Joint']) / k
+
+
+    def choose_operating_model(self):
+        if np.random.rand() < self.get_joint_probability():
+            self.current_agent = self.joint_agent
+            self.current_agent_name = 'Joint'
+        else:
+            self.current_agent = self.independent_agent
+            self.current_agent_name = 'Ind'
+
+
+    def update(self, experience_tuple):
+        self.independent_agent.update(experience_tuple)
+        self.joint_agent.update(experience_tuple)
+
+    def new_trial_function(self):
+        self.choose_operating_model()
+
+    def augment_assignments(self, context):
+        self.independent_agent.augment_assignments(context)
+        self.joint_agent.augment_assignments(context)
+
+    def prune_hypothesis_space(self, threshold=50.):
+        self.independent_agent.prune_hypothesis_space(threshold)
+        self.joint_agent.prune_hypothesis_space(threshold)
+
+    def select_action(self, state):
+        return self.current_agent.select_action(state)
+
+    def evaluate_mixing_agent(self, xp, yp, c, r):
+        sp = self.task.state_location_key[(xp, yp)]
+
+        # get the reward prediction for the MAP joint and MAP ind hypotheses
+        r_hat_i = self.independent_agent.get_reward_prediction(xp, yp, c)
+        r_hat_j = self.joint_agent.get_reward_prediction(xp, yp, c)
+
+        self.responsibilities['Ind'] += self.eta*(r - r_hat_i)
+        self.responsibilities['Joint'] += self.eta*(r - r_hat_j)
 
 class MixedClusterAgent(ModelBasedAgent):
 
