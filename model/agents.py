@@ -832,6 +832,39 @@ class IndependentClusterAgent(ModelBasedAgent):
         h_r = self.reward_hypotheses[ii]
         return h_r.get_reward_prediction(c, sp)
 
+
+class IndependentThompson(IndependentClusterAgent):
+
+    """
+    Honestly, this just does a terrible job.
+
+    """
+
+    def select_abstract_action(self, state):
+        # use thompson sampling to choose an abstract action
+        (x, y), c = state
+        s = self.task.state_location_key[(x, y)]
+
+        # exponentiate and normalize.
+        b = np.exp(self.log_belief_rew - np.max(self.log_belief_rew))
+        b /= b.sum()
+        cdf = np.cumsum(b)
+        X = np.sum(np.random.rand() < cdf) - 1
+        # print X, len(self.reward_hypotheses)
+
+        h_r = self.reward_hypotheses[X]
+
+        q_values = h_r.select_abstract_action_pmf(
+            s, c, self.task.current_trial.transition_function
+        )
+
+        return np.argmax(q_values)
+        # full_pmf = np.exp(q_values * self.inverse_temperature)
+        # full_pmf = full_pmf / np.sum(full_pmf)
+        #
+        # return sample_cmf(full_pmf.cumsum())
+
+
 class SimpleMixed(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
