@@ -9,7 +9,7 @@ from matplotlib import gridspec
 from tqdm import tqdm
 
 from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, SimpleMixed
-from model import SimpleMixed2
+# from model import SimpleMixed2
 
 
 # Define a function to Simulate the Models
@@ -103,50 +103,6 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
     return pd.concat([results_jc, results_ic, results_fl, results_mx])
 
 
-def simulate_mixed_task2(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_threshold=1000,
-                        evaluate=False,
-                        mix_kwargs=None):
-    if agent_kwargs is None:
-        agent_kwargs = dict(alpha=alpha)
-    elif 'alpha' not in agent_kwargs.keys():
-        agent_kwargs['alpha'] = alpha
-
-    if mix_kwargs is None:
-        mix_kwargs = dict(mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.0,)
-    for k, v in agent_kwargs.iteritems():
-        mix_kwargs[k] = v
-
-    results_jc = [None] * n_sim
-    results_ic = [None] * n_sim
-    results_fl = [None] * n_sim
-    results_mx = [None] * n_sim
-    results_mx2 = [None] * n_sim
-    for ii in tqdm(range(n_sim)):
-        results_mx2[ii] = simulate_one(SimpleMixed2, ii, task_kwargs, pruning_threshold=pruning_threshold,
-                                      evaluate=evaluate, agent_kwargs=mix_kwargs)
-        results_mx[ii] = simulate_one(SimpleMixed, ii, task_kwargs, pruning_threshold=pruning_threshold,
-                                      evaluate=evaluate, agent_kwargs=mix_kwargs)
-        results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
-                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
-        results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs=agent_kwargs,
-                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
-        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
-                                      evaluate=evaluate)
-
-
-
-    results_jc = pd.concat(results_jc)
-    results_ic = pd.concat(results_ic)
-    results_fl = pd.concat(results_fl)
-    results_mx = pd.concat(results_mx)
-    results_mx2 = pd.concat(results_mx2)
-
-    results_jc['Model'] = ['Joint'] * len(results_jc)
-    results_ic['Model'] = ['Independent'] * len(results_ic)
-    results_fl['Model'] = ['Flat'] * len(results_fl)
-    results_mx['Model'] = ['Mixed'] * len(results_mx)
-    results_mx2['Model'] = ['Mixed2'] * len(results_mx2)
-    return pd.concat([results_jc, results_ic, results_fl, results_mx, results_mx2])
 
 
 def list_entropy(_list):
