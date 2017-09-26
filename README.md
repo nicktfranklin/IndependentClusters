@@ -36,19 +36,21 @@ This repository contains a simplified demonstration that parallels
 
 #### Notebooks:
 * A demonstration of the model's performance can be found in the 
-notebook file `Demonstration.ipynb`
+notebook file `Demonstration for paper.ipynb`
 
 * A demonstration of a meta-agent that uses a reinforcement learning 
 process to arbitrate between Joint and Independent clustering can be
 found in the notebook file `Demonstration - Meta agent.ipynb`
 
-
 * An information theoretic analysis detailing under what conditions
- it is useful to cluster can be found in `NormativeAnalysis.ipynb`
+ it is useful to cluster can be found in `Information Theoretic Analysis.ipynb`
 
 
-* A demonstration of a problem where the explorations costs grow
+* A demonstration of a problem where the explorations compound
 with each new context can be found in `Rooms Problem.ipynb`
+
+* (In Progress) A demonstration varying the parameters of the rooms problem
+can be found in `Rooms Growth.pynb`
 
 
 ___
