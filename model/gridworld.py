@@ -36,7 +36,7 @@ goal = (0, 0)
 
 class GridWorld(object):
     def __init__(self, grid_world_size, walls, action_map, goal, start_location, context,
-                 state_location_key=None, n_abstract_actions=4):
+                 state_location_key=None, n_abstract_actions=4, n_primitive_actions=8):
         """
 
         :param grid_world_size: 2x2 tuple
@@ -115,8 +115,7 @@ class GridWorld(object):
 
         # store the action map
         self.action_map = {int(key): value for key, value in action_map.iteritems()}
-
-        self.n_primitive_actions = len(self.action_map.keys())
+        self.n_primitive_actions = n_primitive_actions
 
         # define a successor function in terms of key-press for game interactions
         # successor function: takes in location (x, y) and action (button press) and returns successor location (x, y)
@@ -146,12 +145,26 @@ class GridWorld(object):
         # store walls
         self.wall_key = wall_key
 
+        # define the transition function in terms of primitive actions
+        self.primitive_transition_function = np.zeros((n_states, self.n_primitive_actions, n_states))
+        for a in range(self.n_primitive_actions):
+            if a not in self.keys_used:
+                for s in range(n_states):
+                    self.primitive_transition_function[s, a, s] = 1.0
+
+        for (loc, a), locp in self.successor_function.iteritems():
+            s = self.state_location_key[loc]
+            sp = self.state_location_key[locp]
+            self.primitive_transition_function[s, a, sp] = 1.0
+
     def move(self, key_press):
         """
         :param key_press: int key-press
         :return: tuple (((x, y), c), a, aa, r, ((xp, yp), c))
         """
+        prev_location = self.current_location
         if key_press in self.keys_used:
+
             new_location = self.successor_function[self.current_location, key_press]
             # get the abstract action number
             aa = self.abstract_action_key[self.action_map[key_press]]
@@ -167,7 +180,7 @@ class GridWorld(object):
         # update the current location before returning
         self.current_location = new_location
 
-        return (self.current_location, self.context), key_press, aa, r, (new_location, self.context)
+        return (prev_location, self.context), key_press, aa, r, (new_location, self.context)
 
     def goal_check(self):
         return self.current_location == self.goal_location
@@ -359,6 +372,9 @@ class Task(object):
             mapping[a, aa0] = 1
 
         return np.squeeze(mapping[:, aa])
+
+    def get_transition_function(self):
+        return self.current_trial.primitive_transition_function
 
     def get_reward_function(self):
         rewards = np.zeros(self.n_states, dtype=float)

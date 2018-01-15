@@ -2,8 +2,11 @@ import numpy as np
 import pandas as pd
 
 from gridworld import Task
-from cython_library import RewardHypothesis, MappingHypothesis
-from cython_library import policy_iteration
+from cython_library import RewardHypothesis, MappingHypothesis, TransitionHypothesis
+from cython_library import policy_iteration, value_iteration
+
+
+from sklearn.metrics import euclidean_distances
 
 """ these agents differ from the generative agents I typically use in that I need to pass a transition
 function (and possibly a reward function) to the agent for each trial. """
@@ -120,15 +123,12 @@ class MultiStepAgent(object):
     def augment_assignments(self, context):
         pass
 
-    def new_trial_function(self):
-        pass
-
     def get_rewards_kl(self, state):
         f_rew = self.get_reward_function(state)
         f_rew /= np.sum(f_rew)
         return kl_divergence(f_rew, self.task.get_reward_function())
 
-    def get_mapping_kl(self, state):
+    def get_transition_error(self, state):
         pass
 
     def evaluate_map_rewards(self, state):
@@ -173,7 +173,6 @@ class MultiStepAgent(object):
 
             if step_counter[t] == 1:
                 times_seen_ctx[c] += 1
-                self.new_trial_function()
 
                 # entering a new context, prune the hypothesis space and then augment for new context
                 if times_seen_ctx[c] == 1:
@@ -183,13 +182,14 @@ class MultiStepAgent(object):
                     # augment the clustering assignments
                     self.augment_assignments(c)
 
+
             if evaluate_map_estimate:
                 kl_map = self.evaluate_map_mapping(state)
                 kl_rew, map_rewards, full_rewards = self.evaluate_map_rewards(state)
 
             if evaluate:
                 kl_rew = self.get_rewards_kl(state)
-                kl_map = self.get_mapping_kl(state)
+                kl_map = self.get_transition_error(state)
                 # kl_rew = 0
 
             if evaluate & evaluate_map_estimate:
@@ -208,7 +208,10 @@ class MultiStepAgent(object):
             # take an action
             experience_tuple = self.task.move(action)
             ((x, y), c), a, aa, r, ((xp, yp), _) = experience_tuple
-            # print ("Trial %d, step %d:" % (t, step_counter[t])), experience_tuple
+
+            # s = self.task.state_location_key[(x, y)]
+            # sp = self.task.state_location_key[(xp, yp)]
+            # print c, s, a, r, sp, self.task.get_transition_function()[s, a, sp]
 
             self.evaluate_mixing_agent(xp, yp, c, r)
 
@@ -467,7 +470,6 @@ class JointClustering(ModelBasedAgent):
         for ii, h_m in enumerate(self.mapping_hypotheses):
             assert type(h_m) is MappingHypothesis
             self.log_belief[ii] += h_m.get_log_likelihood()
-            # print ii, h_m.get_log_likelihood()
 
     def augment_assignments(self, context):
         new_reward_hypotheses = list()
@@ -553,7 +555,7 @@ class JointClustering(ModelBasedAgent):
         h_r = self.reward_hypotheses[ii]
         return h_r.get_reward_function(c)
 
-    def get_mapping_kl(self, state):
+    def get_transition_error(self, state):
         _, c = state
         ii = np.argmax(self.log_belief)
         h = self.mapping_hypotheses[ii]
@@ -692,8 +694,6 @@ class IndependentClusterAgent(ModelBasedAgent):
                 if max_belief - log_b < log_threshold:
                     new_log_belief_rew.append(log_b)
                     new_reward_hypotheses.append(self.reward_hypotheses[ii])
-                # else:
-                #     print "(Ind, Rew) Removing hypothesis", max_belief, log_b, log_threshold
 
             self.log_belief_rew = new_log_belief_rew
             self.reward_hypotheses = new_reward_hypotheses
@@ -705,8 +705,6 @@ class IndependentClusterAgent(ModelBasedAgent):
                 if max_belief - log_b < log_threshold:
                     new_log_belief_map.append(log_b)
                     new_mapping_hypotheses.append(self.mapping_hypotheses[ii])
-                # else:
-                #     print "(Ind, Map) Removing hypothesis", max_belief, log_b, log_threshold
 
             self.log_belief_map = new_log_belief_map
             self.mapping_hypotheses = new_mapping_hypotheses
@@ -735,7 +733,7 @@ class IndependentClusterAgent(ModelBasedAgent):
         h_r = self.reward_hypotheses[ii]
         return h_r.get_reward_function(c)
 
-    def get_mapping_kl(self, state):
+    def get_transition_error(self, state):
         _, c = state
         ii = np.argmax(self.log_belief_map)
         h_m = self.mapping_hypotheses[ii]
@@ -850,7 +848,6 @@ class IndependentThompson(IndependentClusterAgent):
         b /= b.sum()
         cdf = np.cumsum(b)
         X = np.sum(np.random.rand() < cdf) - 1
-        # print X, len(self.reward_hypotheses)
 
         h_r = self.reward_hypotheses[X]
 
@@ -1123,7 +1120,7 @@ class MixedClusterAgent(ModelBasedAgent):
         h_r = self.reward_hypotheses[ii]
         return h_r.get_reward_function(c)
 
-    def get_mapping_kl(self, state):
+    def get_transition_error(self, state):
         _, c = state
 
         ii = self.pick_map_hyp()
@@ -1448,7 +1445,7 @@ class FlatControlAgent(ModelBasedAgent):
         h_r = self.task_sets[ii]['Reward Hypothesis']
         return h_r.get_reward_function(c)
 
-    def get_mapping_kl(self, state):
+    def get_transition_error(self, state):
         _, c = state
         ii = np.argmax(self.log_belief)
         h = self.task_sets[ii]['Mapping Hypothesis']
@@ -1594,3 +1591,150 @@ class MapClusteringAgent(ModelBasedAgent):
             return sample_cmf(mapping_mle.cumsum())
         else:
             return np.random.randint(self.n_primitive_actions)
+
+
+class FlatTransitionAgent(FullInformationAgent):
+    """ This Agent learns the reward function and transition functions and uses model based planning
+    """
+
+    def __init__(self, task, inverse_temperature=100.0,  discount_rate=0.8, iteration_criterion=0.01, prior=0.01,
+                 epsilon=0.01):
+
+        assert type(task) is Task
+        super(FullInformationAgent, self).__init__(task)
+
+        self.inverse_temperature = inverse_temperature
+        # inverse temperature is used internally by the reward hypothesis to convert q-values into a PMF. We
+        # always want a very greedy PMF as this is only used to deal with cases where there are multiple optimal
+        # actions
+        self.gamma = discount_rate
+        self.iteration_criterion = iteration_criterion
+        self.current_trial = 0
+        self.n_actions = self.task.n_primitive_actions  # this model does not use abstract actions
+        self.epsilon = epsilon
+
+        # create task sets, each containing a reward and mapping hypothesis
+        # with the same assignment
+        self.reward_hypotheses = [RewardHypothesis(
+                self.task.n_states, inverse_temperature, discount_rate, iteration_criterion, 1.0
+            )]
+        self.transition_hypotheses = [TransitionHypothesis(
+                self.task.n_primitive_actions, self.task.n_states, 1.0, prior
+            )]
+
+        self.log_belief = np.ones(1, dtype=float)
+
+    def update(self, experience_tuple):
+        (loc, _), a, _, r, (loc_prime, c) = experience_tuple
+        s = self.task.state_location_key[loc]
+        sp = self.task.state_location_key[loc_prime]
+
+        self.update_transitions(c, s, a, sp)
+        self.update_rewards(c, sp, r)
+
+    def update_transitions(self, c, s, a, sp):
+        for h_t in self.transition_hypotheses:
+            assert type(h_t) is TransitionHypothesis
+            h_t.update(c, s, a, sp)
+
+    def update_rewards(self, c, sp, r):
+        for h_r in self.reward_hypotheses:
+            assert type(h_r) is RewardHypothesis
+            h_r.update(c, sp, r)
+
+
+    def select_action(self, state):
+
+        # use epsilon greedy choice function, with thompson sampling over hypotheses (b/c rewards are deterministic!)
+        if np.random.rand() > self.epsilon:
+            (loc), c = state
+            s = self.task.state_location_key[loc]
+
+            # Thompson Sampling! Draw hypothesis for transition and reward functions and calculate deterministically
+            # with this
+            h_t = self.transition_hypotheses[0] 
+            assert type(h_t) is TransitionHypothesis
+            transition_function = np.asarray(h_t.get_transition_function(c))
+
+            h_r = self.reward_hypotheses[0]
+            reward_function = h_r.get_reward_function(c)
+
+            v = value_iteration(transition_function, reward_function,
+                                  gamma=self.gamma,
+                                  stop_criterion=self.iteration_criterion)
+
+            # use the bellman equation to solve for q
+            q = np.zeros(self.n_actions)
+            for a in range(self.n_actions):
+                for sp in range(self.task.n_states):
+                    q[a] += transition_function[s, a, sp] * (reward_function[sp] + self.gamma * v[sp])
+
+            action = np.argmax(q)
+        else:
+            action = np.random.randint(self.n_actions)
+
+        return action
+
+
+    def set_reward_prior(self, list_locations):
+        """
+        This method allows the agent to specific grid coordinates as potential goal locations by
+        putting some prior (low confidence) reward density over the grid locations.
+
+        All other locations have low reward probability
+
+        :param list_locations: a list of (x, y) coordinates to consider as priors for the goal location search
+        :return: None
+        """
+        # this makes for a 10% reward received prior over putative non-goal states
+        self.reward_visits = np.ones((self.task.n_ctx, self.task.n_states)) * 0.0001
+        self.reward_received = np.ones((self.task.n_ctx, self.task.n_states)) * 0.00001
+
+        for loc in list_locations:
+            s = self.task.state_location_key[loc]
+            self.reward_received[:, s] += 0.001
+            self.reward_visits[:, s] += 0.001
+
+        for s in range(self.task.n_states):
+            for c in range(self.task.n_ctx):
+                self.reward_function[c, s] = self.reward_received[c, s] / self.reward_visits[c, s]
+
+    def prune_hypothesis_space(self, threshold=50.):
+        pass
+
+    def augment_assignments(self, context):
+        # here, we just deterministically assign each context to a new cluster. There is only one hypothesis
+        # in this model
+
+        h_r = self.reward_hypotheses[0]
+        h_t = self.transition_hypotheses[0]
+
+        assert type(h_r) is RewardHypothesis
+        assert type(h_t) is TransitionHypothesis
+
+        h_r.add_new_context_assignment(context, context)
+        h_t.add_new_context_assignment(context, context)
+
+        self.reward_hypotheses[0] = h_r
+        self.transition_hypotheses[0] = h_t
+
+    def get_transition_error(self, state):
+        _, c = state
+        h_t = self.transition_hypotheses[0]
+
+        p = self.task.get_transition_function()
+
+        t = 0
+        q = np.zeros((self.task.n_states, self.task.n_primitive_actions, self.task.n_states))
+
+        for s in range(self.task.n_states):
+            for a in range(self.task.n_primitive_actions):
+                q[s, a, :] = h_t.get_transition_probability(c, s, a)
+
+        p = p.flatten()
+        q = q.flatten()
+        # return kl_divergence(q, p)
+        return euclidean_distances(p.reshape(1, -1), q.reshape(1, -1))[0]
+
+    def get_rewards_kl(self, state):
+        return np.array([1.0])
