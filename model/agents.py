@@ -7,6 +7,7 @@ from cython_library import policy_iteration, value_iteration
 
 
 from sklearn.metrics import euclidean_distances
+from scipy.misc import logsumexp
 
 """ these agents differ from the generative agents I typically use in that I need to pass a transition
 function (and possibly a reward function) to the agent for each trial. """
@@ -87,6 +88,16 @@ def kl_divergence(q, p):
         if p_ii > 0:
             d += p_ii * np.log2(p_ii/q_ii)
     return d
+
+
+def thompson_sample(pmf):
+    # create a cdf from an (un-normalized) pmf
+    cmf = np.cumsum(pmf / np.sum(pmf))
+
+    # use inverse CMF sampling
+    return np.sum(cmf < np.random.uniform(0, 1.0))
+
+
 
 
 class MultiStepAgent(object):
@@ -208,10 +219,6 @@ class MultiStepAgent(object):
             # take an action
             experience_tuple = self.task.move(action)
             ((x, y), c), a, aa, r, ((xp, yp), _) = experience_tuple
-
-            # s = self.task.state_location_key[(x, y)]
-            # sp = self.task.state_location_key[(xp, yp)]
-            # print c, s, a, r, sp, self.task.get_transition_function()[s, a, sp]
 
             self.evaluate_mixing_agent(xp, yp, c, r)
 
@@ -464,7 +471,7 @@ class JointClustering(ModelBasedAgent):
         # then update the posterior of the belief distribution with the reward posterior
         for ii, h_r in enumerate(self.reward_hypotheses):
             assert type(h_r) is RewardHypothesis
-            self.log_belief[ii] = h_r.get_log_likelihood()
+            self.log_belief[ii] += h_r.get_log_likelihood()
 
         # then update the posterior of the mappings likelihood (prior is shared, only need it once)
         for ii, h_m in enumerate(self.mapping_hypotheses):
@@ -1598,7 +1605,7 @@ class FlatTransitionAgent(FullInformationAgent):
     """
 
     def __init__(self, task, inverse_temperature=100.0,  discount_rate=0.8, iteration_criterion=0.01, prior=0.01,
-                 epsilon=0.01):
+                 epsilon=0.05):
 
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
@@ -1622,7 +1629,8 @@ class FlatTransitionAgent(FullInformationAgent):
                 self.task.n_primitive_actions, self.task.n_states, 1.0, prior
             )]
 
-        self.log_belief = np.ones(1, dtype=float)
+        self.log_belief_transitions = np.ones(1, dtype=float)
+        self.log_belief_rewards = np.ones(1, dtype=float)
 
     def update(self, experience_tuple):
         (loc, _), a, _, r, (loc_prime, c) = experience_tuple
@@ -1642,7 +1650,6 @@ class FlatTransitionAgent(FullInformationAgent):
             assert type(h_r) is RewardHypothesis
             h_r.update(c, sp, r)
 
-
     def select_action(self, state):
 
         # use epsilon greedy choice function, with thompson sampling over hypotheses (b/c rewards are deterministic!)
@@ -1650,13 +1657,21 @@ class FlatTransitionAgent(FullInformationAgent):
             (loc), c = state
             s = self.task.state_location_key[loc]
 
-            # Thompson Sampling! Draw hypothesis for transition and reward functions and calculate deterministically
-            # with this
-            h_t = self.transition_hypotheses[0] 
+            # Thompson Sampling! Draw hypothesis for transition and reward functions and estimate a value function
+            # from these samples
+            pmf_t = np.exp(self.log_belief_transitions - logsumexp(self.log_belief_transitions))
+            pmf_r = np.exp(self.log_belief_rewards - logsumexp(self.log_belief_rewards))
+
+            ii = thompson_sample(pmf_t)
+            # ii = np.argmax(self.log_belief_transitions)
+            h_t = self.transition_hypotheses[ii]
             assert type(h_t) is TransitionHypothesis
             transition_function = np.asarray(h_t.get_transition_function(c))
 
-            h_r = self.reward_hypotheses[0]
+            ii = thompson_sample(pmf_r)
+            # ii = np.argmax(self.log_belief_rewards)
+            h_r = self.reward_hypotheses[ii]
+            assert type(h_r) is RewardHypothesis
             reward_function = h_r.get_reward_function(c)
 
             v = value_iteration(transition_function, reward_function,
@@ -1669,12 +1684,15 @@ class FlatTransitionAgent(FullInformationAgent):
                 for sp in range(self.task.n_states):
                     q[a] += transition_function[s, a, sp] * (reward_function[sp] + self.gamma * v[sp])
 
-            action = np.argmax(q)
+            # action = np.argmax(q)
+            full_pmf = np.exp(q * self.inverse_temperature)
+            full_pmf = full_pmf / np.sum(full_pmf)
+
+            return sample_cmf(full_pmf.cumsum())
         else:
             action = np.random.randint(self.n_actions)
 
         return action
-
 
     def set_reward_prior(self, list_locations):
         """
@@ -1738,3 +1756,201 @@ class FlatTransitionAgent(FullInformationAgent):
 
     def get_rewards_kl(self, state):
         return np.array([1.0])
+
+class JointTransitionAgent(FlatTransitionAgent):
+    """ This Agent learns the reward function and transition functions and uses model based planning
+    """
+    def __init__(self, task, inverse_temperature=100.0,  discount_rate=0.8, iteration_criterion=0.01, prior=0.01,
+                 epsilon=0.01, alpha = 1.0):
+        assert type(task) is Task
+        super(JointTransitionAgent, self).__init__(task, inverse_temperature=inverse_temperature,
+                                                   discount_rate=discount_rate, iteration_criterion=iteration_criterion,
+                                                   prior=prior, epsilon=epsilon)
+
+        self.reward_hypotheses = [RewardHypothesis(
+                self.task.n_states, inverse_temperature, discount_rate, iteration_criterion, alpha
+            )]
+        self.transition_hypotheses = [TransitionHypothesis(
+                self.task.n_primitive_actions, self.task.n_states, alpha, prior
+            )]
+
+    def augment_assignments(self, context):
+        new_reward_hypotheses = list()
+        new_transition_hypotheses = list()
+        new_log_belief = list()
+
+        for h_r, h_t in zip(self.reward_hypotheses, self.transition_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            assert type(h_t) is TransitionHypothesis
+
+            old_assignments = h_r.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_r0 = h_r.deep_copy()
+                h_r0.add_new_context_assignment(context, k)
+
+                h_t0 = h_t.deep_copy()
+                h_t0.add_new_context_assignment(context, k)
+
+                new_reward_hypotheses.append(h_r0)
+                new_transition_hypotheses.append(h_t0)
+                new_log_belief.append(h_r0.get_log_posterior() + h_t0.get_log_likelihood())
+
+        self.reward_hypotheses = new_reward_hypotheses
+        self.transition_hypotheses = new_transition_hypotheses
+
+        # for simplicity of programming, create a log belief over the two hypothesis sets that are identical
+        self.log_belief_transitions = np.array(new_log_belief)
+        self.log_belief_rewards = np.array(new_log_belief)
+
+    def update(self, experience_tuple):
+
+        super(JointTransitionAgent, self).update(experience_tuple)
+
+        # these two functions should be the same!
+        self.log_belief_transitions = np.zeros(len(self.transition_hypotheses))
+        self.log_belief_rewards = np.zeros(len(self.log_belief_rewards))
+        for ii, h_t in enumerate(self.transition_hypotheses):
+            assert type(h_t) is TransitionHypothesis
+            self.log_belief_transitions[ii] = h_t.get_log_prior()
+            self.log_belief_rewards[ii]     = h_t.get_log_prior()
+
+        # then update the posterior of the belief distribution with the reward posterior
+        for ii, h_r in enumerate(self.reward_hypotheses):
+            assert type(h_r) is RewardHypothesis
+
+            self.log_belief_transitions[ii] += h_r.get_log_likelihood()
+            self.log_belief_rewards[ii]     += h_r.get_log_likelihood()
+
+        # then update the posterior of the mappings likelihood (prior is shared, only need it once)
+        for ii, h_t in enumerate(self.transition_hypotheses):
+            self.log_belief_transitions[ii] += h_t.get_log_likelihood()
+            self.log_belief_rewards[ii]     += h_t.get_log_likelihood()
+
+    def prune_hypothesis_space(self, threshold=50.):
+        if threshold is not None:
+            new_log_belief = []
+            new_reward_hypotheses = []
+            new_transition_hypotheses = []
+            max_belief = np.max(self.log_belief_transitions)  # the two belief functions are the same
+
+            log_threshold = np.log(threshold)
+
+            for ii, log_b in enumerate(self.log_belief_transitions):
+                if max_belief - log_b < log_threshold:
+                    new_log_belief.append(log_b)
+                    new_reward_hypotheses.append(self.reward_hypotheses[ii])
+                    new_transition_hypotheses.append(self.transition_hypotheses[ii])
+
+            self.log_belief_transitions = new_log_belief
+            self.log_belief_rewards     = new_log_belief
+
+            self.reward_hypotheses     = new_reward_hypotheses
+            self.transition_hypotheses = new_transition_hypotheses
+
+
+class IndependentTransitionAgent(FlatTransitionAgent):
+    """ This Agent learns the reward function and transition functions and uses model based planning
+    """
+    def __init__(self, task, inverse_temperature=100.0,  discount_rate=0.8, iteration_criterion=0.01, prior=0.01,
+                 epsilon=0.01, alpha = 1.0):
+        assert type(task) is Task
+        super(IndependentTransitionAgent, self).__init__(task, inverse_temperature=inverse_temperature,
+                                                   discount_rate=discount_rate, iteration_criterion=iteration_criterion,
+                                                   prior=prior, epsilon=epsilon)
+
+        self.reward_hypotheses = [RewardHypothesis(
+                self.task.n_states, inverse_temperature, discount_rate, iteration_criterion, alpha
+            )]
+        self.transition_hypotheses = [TransitionHypothesis(
+                self.task.n_primitive_actions, self.task.n_states, alpha, prior
+            )]
+        
+    def augment_assignments(self, context):
+        new_reward_hypotheses = list()
+        new_transition_hypotheses = list()
+        new_log_belief_rew = list()
+        new_log_belief_trans = list()
+
+        for h_r in self.reward_hypotheses:
+            assert type(h_r) is RewardHypothesis
+
+            old_assignments = h_r.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_r0 = h_r.deep_copy()
+                h_r0.add_new_context_assignment(context, k)
+
+                new_reward_hypotheses.append(h_r0)
+                new_log_belief_rew.append(h_r0.get_log_prior() + h_r0.get_log_likelihood())
+
+        self.reward_hypotheses = new_reward_hypotheses
+        self.log_belief_rewards = new_log_belief_rew
+
+        for h_t in self.transition_hypotheses:
+            assert type(h_t) is TransitionHypothesis
+
+            old_assignments = h_t.get_assignments()
+            new_assignments = augment_assignments([old_assignments], context)
+
+            # create a list of the new clusters to add
+            for assignment in new_assignments:
+                k = assignment[context]
+                h_t0 = h_t.deep_copy()
+                h_t0.add_new_context_assignment(context, k)
+
+                new_transition_hypotheses.append(h_t0)
+                new_log_belief_trans.append(h_t0.get_log_prior() + h_t0.get_log_likelihood())
+
+        self.transition_hypotheses = new_transition_hypotheses
+        self.log_belief_transitions = new_log_belief_trans
+
+    def update(self, experience_tuple):
+
+        super(IndependentTransitionAgent, self).update(experience_tuple)
+
+        # first, update the transition cluster posterior
+        self.log_belief_transitions = np.zeros(len(self.log_belief_transitions))
+        for ii, h_t in enumerate(self.transition_hypotheses):
+            assert type(h_t) is TransitionHypothesis
+            self.log_belief_transitions[ii] = h_t.get_log_posterior()
+
+        # then update the posterior of the belief distribution with the reward posterior
+        self.log_belief_rewards = np.zeros(len(self.log_belief_rewards))
+        for ii, h_r in enumerate(self.reward_hypotheses):
+            assert type(h_r) is RewardHypothesis
+            self.log_belief_rewards[ii]     += h_r.get_log_posterior()
+
+
+    def prune_hypothesis_space(self, threshold=50.):
+        if threshold is not None:
+            new_log_belief_rew = []
+            new_log_belief_transitions = []
+            new_reward_hypotheses = []
+            new_transition_hypotheses = []
+            max_belief_rew = np.max(self.log_belief_rewards)
+            max_belief_trans = np.max(self.log_belief_transitions)
+
+            log_threshold = np.log(threshold)
+
+            for ii, log_b in enumerate(self.log_belief_rewards):
+                if max_belief_rew - log_b < log_threshold:
+                    new_log_belief_rew.append(log_b)
+                    new_reward_hypotheses.append(self.reward_hypotheses[ii])
+
+            for ii, log_b in enumerate(self.log_belief_transitions):
+                if max_belief_trans - log_b < log_threshold:
+                    new_log_belief_transitions.append(log_b)
+                    new_transition_hypotheses.append(self.transition_hypotheses[ii])
+
+            self.log_belief_transitions = new_log_belief_transitions
+            self.log_belief_rewards     = new_log_belief_rew
+
+            self.reward_hypotheses     = new_reward_hypotheses
+            self.transition_hypotheses = new_transition_hypotheses

@@ -59,16 +59,16 @@ cdef class TransitionCluster(object):
 
     def update(self, int s, int a, int sp):
         # just update the counts
-        self.transition_counts[s, a, sp] += 1
+        self.transition_counts[s, a, sp] += 1.0
         self._update_pmf()
 
     def _update_pmf(self):
         # precalculate the normalizing constant
         cdef int s, a, sp
-        cdef float k
+        cdef double k
         for s in range(self.n_states):
             for a in range(self.n_actions):
-                k = 0
+                k = 0.0
                 for sp in range(self.n_states):
                     k += self.transition_counts[s, a, sp]
 
@@ -96,6 +96,7 @@ cdef class TransitionCluster(object):
             for a in range(self.n_actions):
                 for sp in range(self.n_states):
                     _cluster_copy.transition_counts[s, a, sp] = self.transition_counts[s, a, sp]
+        _cluster_copy._update_pmf()
 
         return _cluster_copy
 
@@ -180,6 +181,9 @@ cdef class TransitionHypothesis(object):
                 log_likelihood += log(cluster.get_likelihood(s, a, sp))
 
             return log_likelihood
+
+        # def get_visit_total(self):
+
 
         def get_log_posterior(self):
             return self.prior_log_prob + self.get_log_likelihood()
