@@ -156,7 +156,7 @@ def mutual_information(list_a, list_b):
     return h_x + h_y - h_xy
 
 
-def plot_results(df, figsize=(6, 3)):
+def plot_results(df, figsize=(6, 3), sharey=True):
     with sns.axes_style('ticks'):
 
         _ = plt.figure(figsize=figsize)
@@ -196,8 +196,12 @@ def plot_results(df, figsize=(6, 3)):
         sns.violinplot(data=df1, x='Model', y='Cumulative Steps Taken', ax=ax1, palette='Set2',
                        order=["Flat", "Independent", "Joint"]
                        )
+
         _, ub = ax1.get_ylim()
         ax1.set_ylim([0, ub])
-        ax0.set_ylim([0, ub])
+        if sharey is True:
+            _, ub = ax0.get_ylim()
+            ax0.set_ylim([0, ub])
+
 
         sns.despine(offset=5)
