@@ -151,6 +151,12 @@ class MultiStepAgent(object):
     def evaluate_mixing_agent(self, xp, yp, c, r):
         pass
 
+    def is_meta(self):
+        return False
+
+    def get_joint_probability(self):
+        pass
+
     def generate(self, pruning_threshold=1000, evaluate=False, evaluate_map_estimate=False):
         """ run through all of the trials of a task and output trial-by-trial data
         :param pruning_threshold:
@@ -251,6 +257,9 @@ class MultiStepAgent(object):
                 trial_dict['MAP Q-function'] = [map_rewards]
                 trial_dict['Full Q-Function'] = [full_rewards]
                 trial_dict['KL MAP Rewards'] = kl_rew
+
+            if self.is_meta():
+                trial_dict['Joint Agent Prob'] = self.get_joint_probability()
 
             results.append(pd.DataFrame(trial_dict, index=[ii]))
 
@@ -869,11 +878,11 @@ class IndependentThompson(IndependentClusterAgent):
         # return sample_cmf(full_pmf.cumsum())
 
 
-class SimpleMixed(ModelBasedAgent):
+class SimpleMetaAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
                  iteration_criterion=0.01,
-                 mapping_prior=0.01, mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.0):
+                 mapping_prior=0.01, mix_biases=[0.0, 0.0]):
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
 
@@ -886,10 +895,10 @@ class SimpleMixed(ModelBasedAgent):
                  iteration_criterion=iteration_criterion, mapping_prior=mapping_prior
         )
 
-
-        self.responsibilities = {'Ind': 0.5 + mix_bias, 'Joint': 0.5 - mix_bias}
-        self.eta = mixing_lrate
-        self.beta = mixing_temp
+        self.responsibilities = {'Ind': mix_biases[0], 'Joint': mix_biases[0]}
+        # self.responsibilities = {'Ind': 0.5 + mix_bias, 'Joint': 0.5 - mix_bias}
+        # self.eta = mixing_lrate
+        # self.beta = mixing_temp
         self.is_mixture = True
 
         self.choose_operating_model()
@@ -899,9 +908,14 @@ class SimpleMixed(ModelBasedAgent):
         # if np.random.rand() < 0.5:
         #     self.current_agent = self.joint_agent
         #     self.current_agent_name = 'Joint'
+
+    def is_meta(self):
+        return True
+
     def get_joint_probability(self):
-        k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
-        return np.exp(self.beta * self.responsibilities['Joint']) / k
+        # k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
+        # return np.exp(self.beta * self.responsibilities['Joint']) / k
+        return np.exp(self.responsibilities['Joint'] - logsumexp(self.responsibilities.values()))
 
 
     def choose_operating_model(self):
@@ -938,10 +952,18 @@ class SimpleMixed(ModelBasedAgent):
         r_hat_i = self.independent_agent.get_reward_prediction(xp, yp, c)
         r_hat_j = self.joint_agent.get_reward_prediction(xp, yp, c)
 
-        self.responsibilities['Ind'] += self.eta*(r - r_hat_i)
-        self.responsibilities['Joint'] += self.eta*(r - r_hat_j)
+        # The map estimate is sensitive to underflow error -- this prevents this be assuming the
+        # model has some probability it is wrong (here, hard coded as 1/1000) and bounding the
+        # models' probability estimates of reward
+        r_hat_j = np.max([0.999 * r_hat_j, 0.001])
+        r_hat_i = np.max([0.999 * r_hat_i, 0.001])
 
-class MixedClusterAgent(ModelBasedAgent):
+        # what is the predicted probability of the observed output for each model? Track the log prob
+        self.responsibilities['Joint'] += np.log(r * r_hat_j + (1 - r) * (1 - r_hat_j))
+        self.responsibilities['Ind']   += np.log(r * r_hat_i + (1 - r) * (1 - r_hat_i))
+        # when r==1, returns the probability of reward; when r==0, return the probability of no reward
+
+class MetaAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
                  iteration_criterion=0.01,
@@ -980,6 +1002,8 @@ class MixedClusterAgent(ModelBasedAgent):
         self.eta = mixing_lrate
         self.beta = mixing_temp
 
+    def is_meta(self):
+        return True
 
     def updating_mapping(self, c, a, aa):
         for h_m in self.mapping_hypotheses:
@@ -1238,7 +1262,7 @@ class MixedClusterAgent(ModelBasedAgent):
         return kl_divergence(map_mapping_mle, full_mapping_mle)
 
 
-class MixedClusterAgent2(MixedClusterAgent):
+class MetaAgent2(MetaAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
                  iteration_criterion=0.01,
@@ -1246,8 +1270,8 @@ class MixedClusterAgent2(MixedClusterAgent):
                  prediction_threshold=0.05):
 
         assert type(task) is Task
-        super(MixedClusterAgent2, self).__init__(task, inverse_temperature, alpha, discount_rate, iteration_criterion,
-                 mapping_prior, mixing_lrate, mixing_temp, mix_bias)
+        super(MetaAgent2, self).__init__(task, inverse_temperature, alpha, discount_rate, iteration_criterion,
+                                         mapping_prior, mixing_lrate, mixing_temp, mix_bias)
 
         self.received_pe_ind = False
         self.received_pe_joint = False

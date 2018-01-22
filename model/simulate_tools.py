@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from tqdm import tqdm
 
-from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, SimpleMixed
+from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, SimpleMetaAgent
 from model import JointTransitionAgent, IndependentTransitionAgent, FlatTransitionAgent
 # from model import SimpleMixed2
 
@@ -100,7 +100,9 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
         np.random.seed(seed)
 
     if mix_kwargs is None:
-        mix_kwargs = dict(mixing_lrate=0.1, mixing_temp=1.0, mix_bias=0.0,)
+        # mix_biases = [np.log(np.random.uniform(0.001, 1.0)), np.log(np.random.uniform(0.001, 1.0))]
+        # mix_kwargs = dict(mix_biases)
+        mix_kwargs = dict(mix_biases=[0.0, 0.0])
     for k, v in agent_kwargs.iteritems():
         mix_kwargs[k] = v
 
@@ -108,7 +110,6 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
     results_ic = [None] * n_sim
     results_fl = [None] * n_sim
     results_mx = [None] * n_sim
-    results_mx2 = [None] * n_sim
     for ii in tqdm(range(n_sim)):
         results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
                                       pruning_threshold=pruning_threshold, evaluate=evaluate)
@@ -117,7 +118,7 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
         results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
                                       evaluate=evaluate)
     for ii in tqdm(range(n_sim)):
-        results_mx[ii] = simulate_one(SimpleMixed, ii, task_kwargs, pruning_threshold=pruning_threshold,
+        results_mx[ii] = simulate_one(SimpleMetaAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
                                       evaluate=evaluate, agent_kwargs=mix_kwargs)
 
 
