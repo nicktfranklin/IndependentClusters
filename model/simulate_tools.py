@@ -8,10 +8,9 @@ import matplotlib.pyplot as plt
 from matplotlib import gridspec
 from tqdm import tqdm
 
-from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, SimpleMetaAgent
+from model import make_task, JointClustering, IndependentClusterAgent, FlatControlAgent, MetaAgent
 from model import JointTransitionAgent, IndependentTransitionAgent, FlatTransitionAgent
-# from model import SimpleMixed2
-
+from model import RLMetaAgent
 
 # Define a function to Simulate the Models
 def simulate_one(agent_class, simulation_number, task_kwargs, agent_kwargs=None, pruning_threshold=1000,
@@ -118,7 +117,53 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
         results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
                                       evaluate=evaluate)
     for ii in tqdm(range(n_sim)):
-        results_mx[ii] = simulate_one(SimpleMetaAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+        results_mx[ii] = simulate_one(MetaAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+                                      evaluate=evaluate, agent_kwargs=mix_kwargs)
+
+
+    results_jc = pd.concat(results_jc)
+    results_ic = pd.concat(results_ic)
+    results_fl = pd.concat(results_fl)
+    results_mx = pd.concat(results_mx)
+
+
+    results_jc['Model'] = ['Joint'] * len(results_jc)
+    results_ic['Model'] = ['Independent'] * len(results_ic)
+    results_fl['Model'] = ['Flat'] * len(results_fl)
+    results_mx['Model'] = ['Mixed'] * len(results_mx)
+    return pd.concat([results_jc, results_ic, results_fl, results_mx])
+
+
+def simulate_mixedrl_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, pruning_threshold=1000,
+                        evaluate=False, seed=None,
+                        mix_kwargs=None):
+    if agent_kwargs is None:
+        agent_kwargs = dict(alpha=alpha)
+    elif 'alpha' not in agent_kwargs.keys():
+        agent_kwargs['alpha'] = alpha
+    if seed is not None:
+        np.random.seed(seed)
+
+    if mix_kwargs is None:
+        # mix_biases = [np.log(np.random.uniform(0.001, 1.0)), np.log(np.random.uniform(0.001, 1.0))]
+        # mix_kwargs = dict(mix_biases)
+        mix_kwargs = dict(mix_biases=[0.0, 0.0], mixing_lrate=0.25, mixing_temp=10.0)
+    for k, v in agent_kwargs.iteritems():
+        mix_kwargs[k] = v
+
+    results_jc = [None] * n_sim
+    results_ic = [None] * n_sim
+    results_fl = [None] * n_sim
+    results_mx = [None] * n_sim
+    for ii in tqdm(range(n_sim)):
+        results_jc[ii] = simulate_one(JointClustering, ii, task_kwargs, agent_kwargs=agent_kwargs,
+                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
+        results_ic[ii] = simulate_one(IndependentClusterAgent, ii, task_kwargs, agent_kwargs=agent_kwargs,
+                                      pruning_threshold=pruning_threshold, evaluate=evaluate)
+        results_fl[ii] = simulate_one(FlatControlAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
+                                      evaluate=evaluate)
+    for ii in tqdm(range(n_sim)):
+        results_mx[ii] = simulate_one(RLMetaAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
                                       evaluate=evaluate, agent_kwargs=mix_kwargs)
 
 
