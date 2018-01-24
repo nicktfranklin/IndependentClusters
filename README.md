@@ -1,7 +1,8 @@
 # Compositional Clustering Demo
 
 This is a demonstration of a reinforcement learning model that
-generalizes components of task structure independently.  
+generalizes components of task structure independently.  A preprint of 
+accompanying these demonstrations is available on bioRxiv: (https://www.biorxiv.org/content/early/2017/10/02/196923)
   
 When an simple, artificial agent, such as a Q-learner, encounters a new
 task it is required to learn the properties of the task from scratch
