@@ -882,7 +882,7 @@ class MetaAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
                  iteration_criterion=0.01,
-                 mapping_prior=0.01, mix_biases=[0.0, 0.0]):
+                 mapping_prior=0.01, m_biases=[0.0, 0.0]):
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
 
@@ -895,7 +895,7 @@ class MetaAgent(ModelBasedAgent):
                  iteration_criterion=iteration_criterion, mapping_prior=mapping_prior
         )
 
-        self.responsibilities = {'Ind': mix_biases[0], 'Joint': mix_biases[0]}
+        self.responsibilities = {'Ind': m_biases[0], 'Joint': m_biases[0]}
         # self.responsibilities = {'Ind': 0.5 + mix_bias, 'Joint': 0.5 - mix_bias}
         # self.eta = mixing_lrate
         # self.beta = mixing_temp
@@ -967,7 +967,7 @@ class RLMetaAgent(ModelBasedAgent):
 
     def __init__(self, task, inverse_temperature=100.0, alpha=1.0, discount_rate=0.8,
                  iteration_criterion=0.01,
-                 mapping_prior=0.01, mix_biases=[0.0, 0.0], mixing_lrate=0.5, mixing_temp=1.0):
+                 mapping_prior=0.01, m_biases=[0.0, 0.0], mixing_lrate=0.5, mixing_temp=1.0):
         assert type(task) is Task
         super(FullInformationAgent, self).__init__(task)
 
@@ -980,7 +980,7 @@ class RLMetaAgent(ModelBasedAgent):
                  iteration_criterion=iteration_criterion, mapping_prior=mapping_prior
         )
 
-        self.responsibilities = {'Ind': 0.5 + mix_biases[0], 'Joint': 0.5 + mix_biases[0]}
+        self.responsibilities = {'Ind': 0.5 + m_biases[0], 'Joint': 0.5 + m_biases[0]}
         # self.responsibilities = {'Ind': 0.5 + mix_bias, 'Joint': 0.5 - mix_bias}
         self.eta = mixing_lrate
         self.beta = mixing_temp
@@ -994,7 +994,6 @@ class RLMetaAgent(ModelBasedAgent):
     def get_joint_probability(self):
         k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
         return np.exp(self.beta * self.responsibilities['Joint']) / k
-
 
     def choose_operating_model(self):
         if np.random.rand() < self.get_joint_probability():
