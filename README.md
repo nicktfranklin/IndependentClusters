@@ -1,7 +1,8 @@
 # Compositional Clustering Demo
 
 This is a demonstration of a reinforcement learning model that
-generalizes components of task structure independently.  A preprint of 
+generalizes components of task structure independently, for the forthcoming paper 
+*Compositional clutering in task structure learning* (Franklin & Frank, *Plos Comp Bio*, 2018). A preprint of 
 accompanying these demonstrations is available on bioRxiv: (https://www.biorxiv.org/content/early/2017/10/02/196923)
   
 When an simple, artificial agent, such as a Q-learner, encounters a new
@@ -46,11 +47,10 @@ found in the notebook file `Demonstration - Meta agent.ipynb`
 * An information theoretic analysis detailing under what conditions
  it is useful to cluster can be found in `Information Theoretic Analysis.ipynb`
 
-
 * A demonstration of a problem where the explorations compound
 with each new context can be found in `Rooms Problem.ipynb`
 
-* (In Progress) A demonstration varying the parameters of the rooms problem
+* The code to simulate varying the parameters of the rooms problem
 can be found in `Rooms Growth.pynb`
 
 
