@@ -943,6 +943,7 @@ class MetaAgent(ModelBasedAgent):
         self.joint_agent.prune_hypothesis_space(threshold)
 
     def select_action(self, state):
+        self.choose_operating_model() # Erattum: this line of code was absent in the paper.
         return self.current_agent.select_action(state)
 
     def evaluate_mixing_agent(self, xp, yp, c, r):
@@ -992,8 +993,12 @@ class RLMetaAgent(ModelBasedAgent):
         return True
 
     def get_joint_probability(self):
-        k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
-        return np.exp(self.beta * self.responsibilities['Joint']) / k
+        # k = np.sum(np.exp(self.beta * np.array(self.responsibilities.values())))
+        # return np.exp(self.beta * self.responsibilities['Joint']) / k
+        
+        # this is the same softmax function as above analytically but more numberically stable
+        k = logsumexp(self.beta * np.array(self.responsibilities.values()))
+        return np.exp(self.beta * self.responsibilities['Joint'] -  k)
 
     def choose_operating_model(self):
         if np.random.rand() < self.get_joint_probability():
@@ -1020,6 +1025,7 @@ class RLMetaAgent(ModelBasedAgent):
         self.joint_agent.prune_hypothesis_space(threshold)
 
     def select_action(self, state):
+        self.choose_operating_model() # Erattum: this line of code was absent in the paper.
         return self.current_agent.select_action(state)
 
 
@@ -1030,8 +1036,23 @@ class RLMetaAgent(ModelBasedAgent):
         r_hat_i = self.independent_agent.get_reward_prediction(xp, yp, c)
         r_hat_j = self.joint_agent.get_reward_prediction(xp, yp, c)
 
-        self.responsibilities['Ind'] += self.eta*(r - r_hat_i)
-        self.responsibilities['Joint'] += self.eta*(r - r_hat_j)
+        ##### Erratum ######
+        # # this is the original update rule used in the paper.
+        # self.responsibilities['Ind'] += self.eta*(r - r_hat_i)
+        # self.responsibilities['Joint'] += self.eta*(r - r_hat_j)
+
+        # This is corrected rule.  Here, we are only updating the "active"
+        # event model, otherwise we run into credit assignment problems where 
+        # the unactive model can get credit for large positive prediction errors
+        if self.current_agent_name == 'Ind':
+            self.responsibilities['Ind'] += self.eta * (r - r_hat_i)
+        else:
+            self.responsibilities['Joint'] += self.eta * (r - r_hat_j)
+
+        # # this update rule also works, and is a close approximation the Bayesian update
+        # # (the negative of the scaled,  unsigned PE is a linear apprixmation of Bayesian suprise)
+        # self.responsibilities['Ind'] += self.eta *  -np.abs(r - r_hat_i)
+        # self.responsibilities['Joint'] += self.eta *  -np.abs(r - r_hat_j)
 
 class IndependentClusterAgentFullBayes(IndependentClusterAgent):
 

@@ -1,9 +1,8 @@
 # Compositional Clustering Demo
 
 This is a demonstration of a reinforcement learning model that
-generalizes components of task structure independently, for the forthcoming paper 
-*Compositional clutering in task structure learning* (Franklin & Frank, *Plos Comp Bio*, 2018). A preprint of 
-accompanying these demonstrations is available on bioRxiv: (https://www.biorxiv.org/content/early/2017/10/02/196923)
+generalizes components of task structure compositionally, for the paper 
+*Compositional clutering in task structure learning* (Franklin & Frank, *Plos Comp Bio*, 2018; https://doi.org/10.1371/journal.pcbi.1006116)
   
 When an simple, artificial agent, such as a Q-learner, encounters a new
 task it is required to learn the properties of the task from scratch
@@ -32,9 +31,10 @@ the desirability of various outcomes. In a reinforcement learning
 setting, skills might be thought as generalized options
 
 
-This repository contains a simplified demonstration that parallels 
- work in human behavior. The repository, and the documentation, are
- currently a work in progress.
+This repository contains a theoretical demonstration that parallels 
+ work in human behavior. Subsequent empirical studies that show humans
+ follow these statistical properties was subsequently published in a 
+ companion paper (Franklin & Frank, *Plos Comp Bio*, 2020; https://doi.org/10.1371/journal.pcbi.1007720).
 
 #### Notebooks:
 * A demonstration of the model's performance can be found in the 
@@ -80,3 +80,6 @@ This library run on Python 2.7 and unlike most python code, requries
 * `model.crp.py`: Backend for Normative analysis
 * `model.cython_libary`: core functions optomized for speed with cython
 * `model.rooms_problem`, `model.rooms_agents`: special agents/models need for rooms simulation
+
+### Corrigendum:  
+This code has been amended to reflect an error.  Specifically, the `MetaAgent.select_action()` and `RLMetaAgent.select_action()` now call the funcion `.choose_operating_model()`, which was missing in the origial version.

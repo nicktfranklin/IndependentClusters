@@ -128,7 +128,7 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
                                       evaluate=evaluate, agent_kwargs=meta_kwargs)
     for ii in tqdm(range(n_sim)):
         results_mx2[ii] = simulate_one(RLMetaAgent, ii, task_kwargs, pruning_threshold=pruning_threshold,
-                                       evaluate=evaluate, agent_kwargs=meta_kwargs)
+                                       evaluate=evaluate, agent_kwargs=metarl_kwargs)
 
     results_jc = pd.concat(results_jc)
     results_ic = pd.concat(results_ic)
@@ -143,7 +143,7 @@ def simulate_mixed_task(n_sim, task_kwargs, agent_kwargs=None, alpha=2.0, prunin
     results_mx['Model'] = ['Meta'] * len(results_mx)
     results_mx2['Model'] = ['MetaRL'] * len(results_mx2)
 
-    return pd.concat([results_jc, results_ic, results_fl, results_mx, results_mx2])
+    return pd.concat([results_jc, results_ic, results_fl, results_mx, results_mx2], sort=False)
 
 
 def list_entropy(_list):
