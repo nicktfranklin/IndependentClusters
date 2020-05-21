@@ -81,5 +81,5 @@ This library run on Python 2.7 and unlike most python code, requries
 * `model.cython_libary`: core functions optomized for speed with cython
 * `model.rooms_problem`, `model.rooms_agents`: special agents/models need for rooms simulation
 
-### Corrigendum:  
+#### Corrigendum:  
 This code has been amended to reflect an error.  Specifically, the `MetaAgent.select_action()` and `RLMetaAgent.select_action()` now call the funcion `.choose_operating_model()`, which was missing in the origial version.
